@@ -69,27 +69,28 @@ def _fetch_accounts_only(client, access_token):
     return response.get("accounts", []), response.get("item", {}), response.get("request_id")
 
 
-def _account_matches(account, account_filter):
-    if not account_filter:
+def matches_any(filter_value, *fields) -> bool:
+    """Return True if any filter word appears in the given fields (or if filter is empty)."""
+    if not filter_value:
         return True
-    needles = [
-        str(value).strip().lower()
-        for value in (account_filter if isinstance(account_filter, list) else [account_filter])
-        if str(value).strip()
-    ]
+    values = filter_value if isinstance(filter_value, list) else [filter_value]
+    needles = [str(v).strip().lower() for v in values if str(v).strip()]
     if not needles:
         return True
-    haystack = " ".join(
-        [
-            str(account.get("account_id", "")),
-            str(account.get("name", "")),
-            str(account.get("official_name", "")),
-            str(account.get("mask", "")),
-            str(account.get("subtype", "")),
-            str(account.get("type", "")),
-        ]
-    ).lower()
+    haystack = " ".join(str(f) for f in fields).lower()
     return any(needle in haystack for needle in needles)
+
+
+def _account_matches(account, account_filter):
+    return matches_any(
+        account_filter,
+        account.get("account_id", ""),
+        account.get("name", ""),
+        account.get("official_name", ""),
+        account.get("mask", ""),
+        account.get("subtype", ""),
+        account.get("type", ""),
+    )
 
 
 def _strip_balances(accounts):
