@@ -2,6 +2,7 @@ import os, json
 from datetime import date
 from flask import Flask, request, jsonify, render_template_string
 from dotenv import load_dotenv
+from extractors.matching import matches_any
 from extractors.plaid_ext import PlaidExtractor, fetch_and_store
 
 load_dotenv()
@@ -67,12 +68,16 @@ class DataExporter:
 
         selected_item_ids = []
         if bank_filter:
-            needles = [n.lower() for n in (bank_filter if isinstance(bank_filter, list) else [bank_filter])]
-            for item_id in tokens.keys():
-                meta = metadata.get(item_id, {})
-                haystack = f"{meta.get('institution_name', '')} {meta.get('institution_id', '')} {item_id}".lower()
-                if any(needle in haystack for needle in needles):
-                    selected_item_ids.append(item_id)
+            selected_item_ids = [
+                item_id
+                for item_id in tokens
+                if matches_any(
+                    bank_filter,
+                    metadata.get(item_id, {}).get("institution_name", ""),
+                    metadata.get(item_id, {}).get("institution_id", ""),
+                    item_id,
+                )
+            ]
         else:
             selected_item_ids = list(tokens.keys())
 

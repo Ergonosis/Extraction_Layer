@@ -6,6 +6,7 @@ from plaid.api import plaid_api
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+from extractors.matching import matches_any
 
 class PlaidExtractor:
     def __init__(self, client_id, secret, env):
@@ -70,26 +71,15 @@ def _fetch_accounts_only(client, access_token):
 
 
 def _account_matches(account, account_filter):
-    if not account_filter:
-        return True
-    needles = [
-        str(value).strip().lower()
-        for value in (account_filter if isinstance(account_filter, list) else [account_filter])
-        if str(value).strip()
-    ]
-    if not needles:
-        return True
-    haystack = " ".join(
-        [
-            str(account.get("account_id", "")),
-            str(account.get("name", "")),
-            str(account.get("official_name", "")),
-            str(account.get("mask", "")),
-            str(account.get("subtype", "")),
-            str(account.get("type", "")),
-        ]
-    ).lower()
-    return any(needle in haystack for needle in needles)
+    return matches_any(
+        account_filter,
+        account.get("account_id", ""),
+        account.get("name", ""),
+        account.get("official_name", ""),
+        account.get("mask", ""),
+        account.get("subtype", ""),
+        account.get("type", ""),
+    )
 
 
 def _strip_balances(accounts):
