@@ -2,7 +2,8 @@ import os, json
 from datetime import date
 from flask import Flask, request, jsonify, render_template_string
 from dotenv import load_dotenv
-from extractors.plaid_ext import PlaidExtractor, fetch_and_store, matches_any
+from extractors.matching import matches_any
+from extractors.plaid_ext import PlaidExtractor, fetch_and_store
 
 load_dotenv()
 app = Flask(__name__)

@@ -6,6 +6,7 @@ from plaid.api import plaid_api
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+from extractors.matching import matches_any
 
 class PlaidExtractor:
     def __init__(self, client_id, secret, env):
@@ -67,18 +68,6 @@ def _fetch_transactions_paginated(client, access_token, start_date, end_date):
 def _fetch_accounts_only(client, access_token):
     response = client.accounts_get(AccountsGetRequest(access_token=access_token)).to_dict()
     return response.get("accounts", []), response.get("item", {}), response.get("request_id")
-
-
-def matches_any(filter_value, *fields) -> bool:
-    """Return True if any filter word appears in the given fields (or if filter is empty)."""
-    if not filter_value:
-        return True
-    values = filter_value if isinstance(filter_value, list) else [filter_value]
-    needles = [str(v).strip().lower() for v in values if str(v).strip()]
-    if not needles:
-        return True
-    haystack = " ".join(str(f) for f in fields).lower()
-    return any(needle in haystack for needle in needles)
 
 
 def _account_matches(account, account_filter):
