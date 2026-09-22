@@ -11,35 +11,44 @@ plaid_engine = PlaidExtractor(os.getenv("PLAID_CLIENT_ID"), os.getenv("PLAID_SEC
 
 # --- Helper Functions ---
 
+TOKENS_FILE = "tokens.json"
+ITEMS_FILE = "items.json"
+
 def get_records_dir():
     return os.getenv("RECORDS_DIR", "records")
 
+def _load_json(filename):
+    path = os.path.join(get_records_dir(), filename)
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r") as f:
+        return json.load(f)
+
+def _save_json(filename, data):
+    os.makedirs(get_records_dir(), exist_ok=True)
+    path = os.path.join(get_records_dir(), filename)
+    with open(path, "w") as f:
+        json.dump(data, f)
+
 def load_tokens():
-    path = os.path.join(get_records_dir(), "tokens.json")
-    return json.load(open(path, "r")) if os.path.exists(path) else {}
+    return _load_json(TOKENS_FILE)
 
 def load_item_metadata():
-    path = os.path.join(get_records_dir(), "items.json")
-    return json.load(open(path, "r")) if os.path.exists(path) else {}
+    return _load_json(ITEMS_FILE)
 
 def save_token(item_id, access_token):
-    records_dir = get_records_dir()
-    os.makedirs(records_dir, exist_ok=True)
-    path = os.path.join(records_dir, "tokens.json")
     tokens = load_tokens()
     tokens[item_id] = access_token
-    with open(path, 'w') as f: json.dump(tokens, f)
+    _save_json(TOKENS_FILE, tokens)
 
 def save_item_metadata(item_id, institution_id, institution_name):
-    records_dir = get_records_dir()
-    path = os.path.join(records_dir, "items.json")
     items = load_item_metadata()
     items[item_id] = {
         "item_id": item_id,
         "institution_id": institution_id,
         "institution_name": institution_name,
     }
-    with open(path, "w") as f: json.dump(items, f)
+    _save_json(ITEMS_FILE, items)
 
 # --- The Core Method Call Class ---
 
