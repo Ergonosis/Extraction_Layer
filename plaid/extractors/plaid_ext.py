@@ -1,4 +1,3 @@
-import os
 import plaid
 from plaid.api import plaid_api
 from plaid.model.accounts_get_request import AccountsGetRequest
@@ -13,6 +12,7 @@ from extractors.export_helpers import (
     write_export,
 )
 from extractors.plaid_pagination import fetch_all_transaction_pages
+from paths import get_records_dir
 
 class PlaidExtractor:
     def __init__(self, client_id, secret, env):
@@ -105,7 +105,7 @@ def fetch_and_store(
         window_days=window_days,
         prefix=prefix,
     )
-    output_dir = output_dir or os.getenv("RECORDS_DIR", "records")
+    output_dir = output_dir or get_records_dir()
     filename = build_export_filename(
         output_dir, prefix, start_date, end_date, item_id=item_id
     )
