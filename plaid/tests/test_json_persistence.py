@@ -1,6 +1,15 @@
-import json
+"""JSON persistence tests — mock plaid_ext so importing apps does not need live Plaid wiring."""
 
-import apps
+import json
+import sys
+from unittest.mock import MagicMock
+
+# Stub Plaid extractor before apps pulls it in
+_mock_ext = MagicMock()
+_mock_ext.PlaidExtractor.return_value.client = MagicMock()
+sys.modules["extractors.plaid_ext"] = _mock_ext
+
+import apps  # noqa: E402
 
 
 def test_load_json_missing_file_returns_empty_dict(records_dir):
