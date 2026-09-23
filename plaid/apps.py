@@ -1,22 +1,36 @@
 import os, json
 from datetime import date
+
 from flask import Flask, request, jsonify, render_template_string
 from dotenv import load_dotenv
+
+from plaid.model.country_code import CountryCode
+from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.products import Products
+
 from extractors.matching import matches_any
 from extractors.plaid_ext import PlaidExtractor, fetch_and_store
+from paths import get_records_dir
 
 load_dotenv()
 app = Flask(__name__)
 
 plaid_engine = PlaidExtractor(os.getenv("PLAID_CLIENT_ID"), os.getenv("PLAID_SECRET"), os.getenv("PLAID_ENV"))
 
+_INDEX_HTML = None
+_index_path = os.path.join(os.path.dirname(__file__), "index.html")
+if os.path.exists(_index_path):
+    with open(_index_path, encoding="utf-8") as f:
+        _INDEX_HTML = f.read()
+
 # --- Helper Functions ---
 
 TOKENS_FILE = "tokens.json"
 ITEMS_FILE = "items.json"
-
-def get_records_dir():
-    return os.getenv("RECORDS_DIR", "records")
 
 def _load_json(filename):
     path = os.path.join(get_records_dir(), filename)
@@ -99,17 +113,13 @@ class DataExporter:
 
 @app.route('/')
 def index():
-    if os.path.exists('index.html'):
-        return render_template_string(open('index.html').read())
-    return "Plaid connect page missing.", 404
+    if _INDEX_HTML is None:
+        return "Plaid connect page missing.", 404
+    return render_template_string(_INDEX_HTML)
 
 
 @app.route('/api/create_link_token', methods=['POST'])
 def link_token():
-    from plaid.model.link_token_create_request import LinkTokenCreateRequest
-    from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
-    from plaid.model.products import Products
-    from plaid.model.country_code import CountryCode
     req = LinkTokenCreateRequest(
         products=[Products('transactions')],
         client_name="Data Aggregator",
@@ -121,11 +131,6 @@ def link_token():
 
 @app.route('/api/exchange_public_token', methods=['POST'])
 def exchange():
-    from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
-    from plaid.model.item_get_request import ItemGetRequest
-    from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
-    from plaid.model.country_code import CountryCode
-
     pub_token = request.json.get('public_token')
     exchange_resp = plaid_engine.client.item_public_token_exchange(ItemPublicTokenExchangeRequest(public_token=pub_token))
     access_token, item_id = exchange_resp['access_token'], exchange_resp["item_id"]
