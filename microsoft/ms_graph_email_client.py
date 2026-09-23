@@ -125,10 +125,10 @@ class MicrosoftGraphEmailClient:
 
             data = response.json()
 
-            for msg in data.get("value", []):
-                messages.append(
-                    self._normalize_message(msg, strip_html=strip_html)
-                )
+            messages.extend(
+                self._normalize_message(msg, strip_html=strip_html)
+                for msg in data.get("value", [])
+            )
 
             url = data.get("@odata.nextLink")
             page_count += 1
