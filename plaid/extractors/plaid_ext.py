@@ -1,11 +1,18 @@
-import json
-import os
-from datetime import date, timedelta
 import plaid
 from plaid.api import plaid_api
 from plaid.model.accounts_get_request import AccountsGetRequest
 from plaid.model.transactions_get_request import TransactionsGetRequest
 from plaid.model.transactions_get_request_options import TransactionsGetRequestOptions
+from extractors.export_helpers import (
+    build_export_filename,
+    filter_accounts_and_transactions,
+    resolve_date_range,
+    resolve_export_prefix,
+    strip_balances,
+    write_export,
+)
+from extractors.plaid_pagination import fetch_all_transaction_pages
+from paths import get_records_dir
 
 class PlaidExtractor:
     def __init__(self, client_id, secret, env):
@@ -21,15 +28,7 @@ class PlaidExtractor:
         self.client = plaid_api.PlaidApi(api_client)
 
 def _fetch_transactions_paginated(client, access_token, start_date, end_date):
-    offset = 0
-    count = 500
-    all_transactions = []
-    accounts = []
-    item = {}
-    request_id = None
-    total_transactions = 0
-
-    while True:
+    def fetch_page(offset, count):
         options = TransactionsGetRequestOptions(count=count, offset=offset)
         request = TransactionsGetRequest(
             access_token=access_token,
@@ -37,68 +36,14 @@ def _fetch_transactions_paginated(client, access_token, start_date, end_date):
             end_date=end_date,
             options=options,
         )
+        return client.transactions_get(request).to_dict()
 
-        response = client.transactions_get(request).to_dict()
-        batch = response.get("transactions", [])
-
-        if not accounts:
-            accounts = response.get("accounts", [])
-        if not item:
-            item = response.get("item", {})
-        if request_id is None:
-            request_id = response.get("request_id")
-
-        total_transactions = response.get("total_transactions", len(batch))
-        all_transactions.extend(batch)
-        offset += len(batch)
-
-        if offset >= total_transactions:
-            break
-
-    return {
-        "accounts": accounts,
-        "transactions": all_transactions,
-        "item": item,
-        "total_transactions": len(all_transactions),
-        "request_id": request_id,
-    }
+    return fetch_all_transaction_pages(fetch_page)
 
 
 def _fetch_accounts_only(client, access_token):
     response = client.accounts_get(AccountsGetRequest(access_token=access_token)).to_dict()
     return response.get("accounts", []), response.get("item", {}), response.get("request_id")
-
-
-def _account_matches(account, account_filter):
-    if not account_filter:
-        return True
-    needles = [
-        str(value).strip().lower()
-        for value in (account_filter if isinstance(account_filter, list) else [account_filter])
-        if str(value).strip()
-    ]
-    if not needles:
-        return True
-    haystack = " ".join(
-        [
-            str(account.get("account_id", "")),
-            str(account.get("name", "")),
-            str(account.get("official_name", "")),
-            str(account.get("mask", "")),
-            str(account.get("subtype", "")),
-            str(account.get("type", "")),
-        ]
-    ).lower()
-    return any(needle in haystack for needle in needles)
-
-
-def _strip_balances(accounts):
-    sanitized = []
-    for account in accounts:
-        copy = dict(account)
-        copy.pop("balances", None)
-        sanitized.append(copy)
-    return sanitized
 
 
 def fetch_and_store(
@@ -115,20 +60,12 @@ def fetch_and_store(
     account_filter=None,
     output_dir=None,
 ):
-    if end_date is None:
-        end_date = date.today()
-
-    if start_date is None:
-        if is_hard_pull:
-            start_date = date(2000, 1, 1)
-        else:
-            days = window_days if window_days is not None else 7
-            if days <= 0:
-                raise ValueError("window_days must be greater than 0")
-            start_date = end_date - timedelta(days=days)
-
-    if start_date > end_date:
-        raise ValueError("start_date must be on or before end_date")
+    start_date, end_date = resolve_date_range(
+        start_date=start_date,
+        end_date=end_date,
+        is_hard_pull=is_hard_pull,
+        window_days=window_days,
+    )
 
     if include_transactions:
         data = _fetch_transactions_paginated(client, access_token, start_date, end_date)
@@ -142,24 +79,14 @@ def fetch_and_store(
             "request_id": request_id,
         }
 
-    selected_account_ids = {
-        account.get("account_id")
-        for account in data.get("accounts", [])
-        if _account_matches(account, account_filter)
-    }
-    filtered_accounts = [
-        account
-        for account in data.get("accounts", [])
-        if account.get("account_id") in selected_account_ids
-    ]
-    filtered_transactions = [
-        txn
-        for txn in data.get("transactions", [])
-        if txn.get("account_id") in selected_account_ids
-    ]
+    filtered_accounts, filtered_transactions = filter_accounts_and_transactions(
+        data.get("accounts", []),
+        data.get("transactions", []),
+        account_filter,
+    )
 
     if not include_balances:
-        filtered_accounts = _strip_balances(filtered_accounts)
+        filtered_accounts = strip_balances(filtered_accounts)
 
     data["accounts"] = filtered_accounts
     data["transactions"] = filtered_transactions
@@ -173,20 +100,13 @@ def fetch_and_store(
         "include_balances": include_balances,
     }
 
-    if prefix is None:
-        if is_hard_pull:
-            prefix = "full_history"
-        elif window_days is not None:
-            prefix = "weekly"
-        else:
-            prefix = "range"
-
-    item_suffix = f"_{item_id}" if item_id else ""
-    output_dir = output_dir or os.getenv("RECORDS_DIR", "records")
-    filename = os.path.join(output_dir, f"{prefix}_{start_date}_to_{end_date}{item_suffix}.json")
-    os.makedirs(output_dir, exist_ok=True)
-
-    with open(filename, "w") as f:
-        json.dump(data, f, indent=4, default=str)
-
-    return filename
+    prefix = resolve_export_prefix(
+        is_hard_pull=is_hard_pull,
+        window_days=window_days,
+        prefix=prefix,
+    )
+    output_dir = output_dir or get_records_dir()
+    filename = build_export_filename(
+        output_dir, prefix, start_date, end_date, item_id=item_id
+    )
+    return write_export(data, filename)

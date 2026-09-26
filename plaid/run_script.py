@@ -1,6 +1,8 @@
 from datetime import date
-from apps import DataExporter, get_records_dir
 from typing import List, Optional, Dict
+
+from apps import DataExporter
+from paths import get_records_dir
 
 def run_data_export(
     start_date: date = date(2024, 1, 1),
