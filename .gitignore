@@ -2,3 +2,5 @@ venv/
 .env
 __pycache__/
 plaid/records/
+portal/node_modules/
+portal/dist/

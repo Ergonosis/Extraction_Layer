@@ -1,3 +1,11 @@
 flask==3.0.0
 plaid-python==21.0.0
 python-dotenv==1.0.0
+flask-cors==4.0.1
+flask-sqlalchemy==3.1.1
+flask-migrate==4.0.7
+psycopg2-binary==2.9.9
+flask-limiter==3.8.0
+google-cloud-secret-manager==2.21.1
+cryptography==43.0.3
+msal==1.31.1
