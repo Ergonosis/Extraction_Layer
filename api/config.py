@@ -11,7 +11,12 @@ class Config:
     """Base configuration for the portal API."""
 
     SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-me")
-    DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://localhost:5432/portal")
+    # Local default: dedicated extraction-portal-postgres Docker container (host port 5434).
+    # Do not use 5432/5433 (other projects). Override with DATABASE_URL for Cloud SQL in production.
+    DATABASE_URL = os.getenv(
+        "DATABASE_URL",
+        "postgresql://portal:portal@localhost:5434/portal",
+    )
 
     # Microsoft Entra ID / MS Graph (used by later issues)
     MS_CLIENT_ID = os.getenv("MS_CLIENT_ID", "")
