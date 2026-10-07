@@ -21,6 +21,9 @@ def create_app(config_class=Config):
     db.init_app(app)
     migrate.init_app(app, db)
 
+    # Register models with SQLAlchemy so Alembic can see them
+    from api import models  # noqa: F401
+
     from api.auth import bp as auth_bp
     from api.integrations import bp as integrations_bp
     from api.msgraph_bp import bp as msgraph_bp
