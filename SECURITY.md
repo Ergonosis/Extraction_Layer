@@ -11,6 +11,30 @@ flask db upgrade
 
 Use `DATABASE_URL` in `.env` if needed. Local default is `postgresql://portal:portal@localhost:5434/portal` (Docker `extraction-portal-postgres`). Do not use ports 5432/5433. Production uses Cloud SQL.
 
+## Redis (sessions + rate limits)
+
+Local default: Docker container `extraction-portal-redis` on host port **6379**.
+
+```bash
+docker run -d --name extraction-portal-redis -p 6379:6379 redis:7-alpine
+```
+
+`REDIS_URL` defaults to `redis://localhost:6379/0`. Flask-Session and flask-limiter both use this Redis. Production should point `REDIS_URL` at Memorystore (or equivalent), not a laptop container.
+
+## CSRF
+
+Mutating requests (`POST` / `PUT` / `DELETE` / `PATCH`) must send header `X-CSRF-Token` matching the token from `GET /api/auth/csrf-token` (stored in the server session). Missing/invalid token returns `403`.
+
+## Session cookies
+
+- `HttpOnly`, `SameSite=Lax`
+- `Secure` defaults to on only when `FLASK_ENV=production` (override with `SESSION_COOKIE_SECURE`)
+- Lifetime: 8 hours
+
+## Loading secrets from GCP
+
+Set `USE_GCP_SECRETS=true` and `GCP_PROJECT_ID=...`. Then `SECRET_KEY`, `FERNET_KEY`, and other secrets can be loaded from Secret Manager (`SECRET_KEY_SECRET_ID` overrides the secret name). Locally, keep using `.env`.
+
 ## Fernet key (`FERNET_KEY`)
 
 Plaid and Microsoft Graph tokens are encrypted at rest with Fernet (symmetric AES). The key lives in **Google Cloud Secret Manager** in production. Local development may use a `.env` value; that is not acceptable in production.

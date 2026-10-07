@@ -2,9 +2,12 @@
 
 from flask import Flask, jsonify
 from flask_cors import CORS
+from flask_session import Session
 
 from api.config import Config
 from api.extensions import db, migrate
+from api.middleware import register_security_middleware
+from api.rate_limit import init_limiter
 
 
 def create_app(config_class=Config):
@@ -18,8 +21,18 @@ def create_app(config_class=Config):
         supports_credentials=True,
     )
 
+    # Redis-backed server-side sessions when REDIS_URL is configured
+    redis_url = app.config.get("REDIS_URL") or ""
+    if redis_url:
+        import redis as redis_lib
+
+        app.config["SESSION_REDIS"] = redis_lib.from_url(redis_url)
+        Session(app)
+
     db.init_app(app)
     migrate.init_app(app, db)
+    init_limiter(app)
+    register_security_middleware(app)
 
     # Register models with SQLAlchemy so Alembic can see them
     from api import models  # noqa: F401

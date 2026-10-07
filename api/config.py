@@ -1,16 +1,54 @@
-"""Settings loaded from environment variables."""
+"""Settings loaded from environment variables / GCP Secret Manager."""
+
+from __future__ import annotations
 
 import os
+from datetime import timedelta
 
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _secret_from_gcp(secret_id: str) -> str | None:
+    """Load the latest secret value from GCP Secret Manager, or None on failure/skip."""
+    project = os.getenv("GCP_PROJECT_ID", "")
+    if not project or not secret_id:
+        return None
+    try:
+        from google.cloud import secretmanager
+
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project}/secrets/{secret_id}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        return response.payload.data.decode("utf-8")
+    except Exception:
+        return None
+
+
+def _load_secret(env_name: str, default: str = "") -> str:
+    """Prefer GCP Secret Manager when USE_GCP_SECRETS is set; else env / default."""
+    if _env_bool("USE_GCP_SECRETS", False):
+        secret_id = os.getenv(f"{env_name}_SECRET_ID", env_name)
+        value = _secret_from_gcp(secret_id)
+        if value:
+            return value
+    return os.getenv(env_name, default)
+
+
 class Config:
     """Base configuration for the portal API."""
 
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-change-me")
+    FLASK_ENV = os.getenv("FLASK_ENV", "development")
+
+    SECRET_KEY = _load_secret("SECRET_KEY", "dev-only-change-me")
     # Local default: dedicated extraction-portal-postgres Docker container (host port 5434).
     # Do not use 5432/5433 (other projects). Override with DATABASE_URL for Cloud SQL in production.
     DATABASE_URL = os.getenv(
@@ -18,18 +56,21 @@ class Config:
         "postgresql://portal:portal@localhost:5434/portal",
     )
 
+    # Dedicated portal Redis (Docker extraction-portal-redis). Used for sessions + rate limits.
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+
     # Microsoft Entra ID / MS Graph (used by later issues)
     MS_CLIENT_ID = os.getenv("MS_CLIENT_ID", "")
-    MS_CLIENT_SECRET = os.getenv("MS_CLIENT_SECRET", "")
+    MS_CLIENT_SECRET = _load_secret("MS_CLIENT_SECRET", "")
     MS_TENANT_ID = os.getenv("MS_TENANT_ID", "")
 
     # Plaid (used by later issues)
     PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID", "")
-    PLAID_SECRET = os.getenv("PLAID_SECRET", "")
+    PLAID_SECRET = _load_secret("PLAID_SECRET", "")
     PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")
 
     # Fernet key for token encryption (used by later issues)
-    FERNET_KEY = os.getenv("FERNET_KEY", "")
+    FERNET_KEY = _load_secret("FERNET_KEY", "")
 
     # CORS: portal origin for local Vite dev server
     CORS_ORIGINS = [
@@ -40,3 +81,20 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+
+    # Session cookie hardening
+    SESSION_COOKIE_HTTPONLY = True
+    SESSION_COOKIE_SAMESITE = "Lax"
+    # Secure cookies break plain http://localhost; enable in production (or set env).
+    SESSION_COOKIE_SECURE = _env_bool(
+        "SESSION_COOKIE_SECURE",
+        default=(FLASK_ENV == "production"),
+    )
+    PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
+    SESSION_REFRESH_EACH_REQUEST = True
+
+    # flask-session (Redis-backed when REDIS_URL is set)
+    SESSION_TYPE = "redis"
+    SESSION_PERMANENT = True
+    SESSION_USE_SIGNER = True
+    SESSION_KEY_PREFIX = "portal:session:"
