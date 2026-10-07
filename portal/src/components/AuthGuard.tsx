@@ -12,7 +12,7 @@ export function AuthGuard({ children }: Props) {
 
   // LOCAL ONLY — VITE_DEV_BYPASS_AUTH. Never enable in production builds.
   if (DEV_UI_BYPASS_AUTH && status === 'authenticated') {
-    return children
+    return <div className="app-frame-fill">{children}</div>
   }
 
   if (status === 'loading') {
@@ -27,5 +27,5 @@ export function AuthGuard({ children }: Props) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
 
-  return children
+  return <div className="app-frame-fill">{children}</div>
 }
