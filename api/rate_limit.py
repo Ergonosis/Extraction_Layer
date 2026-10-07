@@ -17,6 +17,8 @@ auth_callback_limit = limiter.limit("5 per minute")
 auth_me_limit = limiter.limit("30 per minute")
 mutation_limit = limiter.limit("10 per minute")
 strict_mutation_limit = limiter.limit("5 per minute")
+# Plaid status polls (issue #24)
+plaid_status_limit = limiter.limit("15 per minute")
 
 
 def init_limiter(app: Flask) -> Limiter:
