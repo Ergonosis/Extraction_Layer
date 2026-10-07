@@ -1,4 +1,4 @@
-"""Auth blueprint package (SSO routes added in a later issue)."""
+"""Auth blueprint: Microsoft SSO + CSRF helpers."""
 
 from flask import Blueprint
 

@@ -59,10 +59,30 @@ class Config:
     # Dedicated portal Redis (Docker extraction-portal-redis). Used for sessions + rate limits.
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 
-    # Microsoft Entra ID / MS Graph (used by later issues)
+    # Microsoft Entra ID — multi-tenant SSO (issue #21)
+    # Authority uses /organizations so any work/school tenant can sign in.
     MS_CLIENT_ID = os.getenv("MS_CLIENT_ID", "")
     MS_CLIENT_SECRET = _load_secret("MS_CLIENT_SECRET", "")
-    MS_TENANT_ID = os.getenv("MS_TENANT_ID", "")
+    MS_TENANT_ID = os.getenv("MS_TENANT_ID", "")  # optional legacy; not used for SSO authority
+    MS_AUTHORITY = os.getenv(
+        "MS_AUTHORITY",
+        "https://login.microsoftonline.com/organizations",
+    )
+    MS_REDIRECT_URI = os.getenv(
+        "MS_REDIRECT_URI",
+        "http://localhost:5000/api/auth/callback",
+    )
+    # Comma-separated Entra tenant IDs; empty = allow any organizational tenant
+    MS_TENANT_ALLOWLIST = [
+        tid.strip()
+        for tid in os.getenv("MS_TENANT_ALLOWLIST", "").split(",")
+        if tid.strip()
+    ]
+    MS_SSO_SCOPES = ["openid", "profile", "email"]
+
+    # Where the browser returns after successful SSO
+    PORTAL_URL = os.getenv("PORTAL_URL", "http://localhost:5173").rstrip("/")
+    PORTAL_POST_LOGIN_PATH = os.getenv("PORTAL_POST_LOGIN_PATH", "/connections")
 
     # Plaid (used by later issues)
     PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID", "")
