@@ -8,7 +8,9 @@ import {
   type ReactNode,
 } from 'react'
 import {
+  devLogin,
   fetchCurrentUser,
+  fetchDevLoginStatus,
   logout as logoutRequest,
   type AuthUser,
 } from '../api/auth'
@@ -27,6 +29,17 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
+async function ensureDevSession(): Promise<AuthUser | null> {
+  const enabled = await fetchDevLoginStatus()
+  if (!enabled) return null
+  try {
+    await devLogin()
+    return await fetchCurrentUser()
+  } catch {
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [user, setUser] = useState<AuthUser | null>(null)
@@ -34,23 +47,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
-      const next = await fetchCurrentUser()
+      let next = await fetchCurrentUser()
+
+      // Prefer a real local session over UI-only mock so /api/integrations works.
+      if (!next) {
+        next = await ensureDevSession()
+      }
+
       if (next) {
         setUser(next)
         setUiBypassActive(false)
         setStatus('authenticated')
         return
       }
+
       if (DEV_UI_BYPASS_AUTH) {
         setUser({ ...DEV_MOCK_USER })
         setUiBypassActive(true)
         setStatus('authenticated')
         return
       }
+
       setUser(null)
       setUiBypassActive(false)
       setStatus('unauthenticated')
     } catch {
+      const recovered = await ensureDevSession()
+      if (recovered) {
+        setUser(recovered)
+        setUiBypassActive(false)
+        setStatus('authenticated')
+        return
+      }
       if (DEV_UI_BYPASS_AUTH) {
         setUser({ ...DEV_MOCK_USER })
         setUiBypassActive(true)
@@ -73,6 +101,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await logoutRequest()
       }
     } finally {
+      // After logout, try to stay usable in local-dev mode.
+      const recovered = await ensureDevSession()
+      if (recovered) {
+        setUser(recovered)
+        setUiBypassActive(false)
+        setStatus('authenticated')
+        return
+      }
       if (DEV_UI_BYPASS_AUTH) {
         setUser({ ...DEV_MOCK_USER })
         setUiBypassActive(true)
