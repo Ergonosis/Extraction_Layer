@@ -12,12 +12,15 @@ import {
   logout as logoutRequest,
   type AuthUser,
 } from '../api/auth'
+import { DEV_MOCK_USER, DEV_UI_BYPASS_AUTH } from '../config/devAuth'
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 type AuthContextValue = {
   status: AuthStatus
   user: AuthUser | null
+  /** True when VITE_DEV_BYPASS_AUTH is providing a mock user (no real session). */
+  uiBypassActive: boolean
   refresh: () => Promise<void>
   logout: () => Promise<void>
 }
@@ -27,14 +30,35 @@ const AuthContext = createContext<AuthContextValue | null>(null)
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [user, setUser] = useState<AuthUser | null>(null)
+  const [uiBypassActive, setUiBypassActive] = useState(false)
 
   const refresh = useCallback(async () => {
     try {
       const next = await fetchCurrentUser()
-      setUser(next)
-      setStatus(next ? 'authenticated' : 'unauthenticated')
-    } catch {
+      if (next) {
+        setUser(next)
+        setUiBypassActive(false)
+        setStatus('authenticated')
+        return
+      }
+      if (DEV_UI_BYPASS_AUTH) {
+        setUser({ ...DEV_MOCK_USER })
+        setUiBypassActive(true)
+        setStatus('authenticated')
+        return
+      }
       setUser(null)
+      setUiBypassActive(false)
+      setStatus('unauthenticated')
+    } catch {
+      if (DEV_UI_BYPASS_AUTH) {
+        setUser({ ...DEV_MOCK_USER })
+        setUiBypassActive(true)
+        setStatus('authenticated')
+        return
+      }
+      setUser(null)
+      setUiBypassActive(false)
       setStatus('unauthenticated')
     }
   }, [])
@@ -45,16 +69,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(async () => {
     try {
-      await logoutRequest()
+      if (!uiBypassActive) {
+        await logoutRequest()
+      }
     } finally {
-      setUser(null)
-      setStatus('unauthenticated')
+      if (DEV_UI_BYPASS_AUTH) {
+        setUser({ ...DEV_MOCK_USER })
+        setUiBypassActive(true)
+        setStatus('authenticated')
+      } else {
+        setUser(null)
+        setUiBypassActive(false)
+        setStatus('unauthenticated')
+      }
     }
-  }, [])
+  }, [uiBypassActive])
 
   const value = useMemo(
-    () => ({ status, user, refresh, logout }),
-    [status, user, refresh, logout],
+    () => ({ status, user, uiBypassActive, refresh, logout }),
+    [status, user, uiBypassActive, refresh, logout],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

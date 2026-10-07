@@ -1,5 +1,11 @@
+import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
-import { startMicrosoftLogin } from '../api/auth'
+import {
+  devLogin,
+  fetchDevLoginStatus,
+  startMicrosoftLogin,
+} from '../api/auth'
+import { DEV_UI_BYPASS_AUTH } from '../config/devAuth'
 import { useAuth } from '../context/AuthContext'
 import './LoginPage.css'
 
@@ -56,7 +62,14 @@ function ShieldLockIcon() {
 }
 
 export function LoginPage() {
-  const { status } = useAuth()
+  const { status, refresh } = useAuth()
+  const [apiDevLogin, setApiDevLogin] = useState(false)
+  const [devBusy, setDevBusy] = useState(false)
+  const [devError, setDevError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void fetchDevLoginStatus().then(setApiDevLogin)
+  }, [])
 
   if (status === 'loading') {
     return (
@@ -68,6 +81,19 @@ export function LoginPage() {
 
   if (status === 'authenticated') {
     return <Navigate to="/connections" replace />
+  }
+
+  const onDevLogin = async () => {
+    setDevBusy(true)
+    setDevError(null)
+    try {
+      await devLogin()
+      await refresh()
+    } catch {
+      setDevError('Dev login failed. Is Flask running with ENABLE_DEV_LOGIN=true?')
+    } finally {
+      setDevBusy(false)
+    }
   }
 
   return (
@@ -85,6 +111,31 @@ export function LoginPage() {
           <span>Sign in with Microsoft</span>
         </button>
         <p className="login-footer">Sign in with your organization account</p>
+
+        {(apiDevLogin || DEV_UI_BYPASS_AUTH) && (
+          <div className="login-dev-panel">
+            <p className="login-dev-warning">
+              LOCAL ONLY — disable before production
+            </p>
+            {apiDevLogin && (
+              <button
+                type="button"
+                className="login-dev-button"
+                disabled={devBusy}
+                onClick={() => void onDevLogin()}
+              >
+                {devBusy ? 'Signing in…' : 'Continue as local dev user'}
+              </button>
+            )}
+            {DEV_UI_BYPASS_AUTH && !apiDevLogin && (
+              <p className="login-dev-hint">
+                UI bypass is on (`VITE_DEV_BYPASS_AUTH`). Open /connections for a
+                mock shell; enable `ENABLE_DEV_LOGIN` for real API data.
+              </p>
+            )}
+            {devError && <p className="login-dev-error">{devError}</p>}
+          </div>
+        )}
       </div>
     </div>
   )

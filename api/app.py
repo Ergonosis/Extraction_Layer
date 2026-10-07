@@ -1,5 +1,8 @@
 """Flask application factory for the portal API."""
 
+import logging
+import sys
+
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_session import Session
@@ -9,11 +12,43 @@ from api.extensions import db, migrate
 from api.middleware import register_security_middleware
 from api.rate_limit import init_limiter
 
+logger = logging.getLogger(__name__)
+
+
+def _assert_dev_login_safe(app: Flask) -> None:
+    """Refuse to boot if ENABLE_DEV_LOGIN is on in production."""
+    enabled = bool(app.config.get("ENABLE_DEV_LOGIN"))
+    env = (app.config.get("FLASK_ENV") or "").strip().lower()
+    if enabled and env == "production":
+        logger.critical(
+            "REFUSING TO START: ENABLE_DEV_LOGIN=true while FLASK_ENV=production. "
+            "Disable ENABLE_DEV_LOGIN before deploying."
+        )
+        raise RuntimeError(
+            "ENABLE_DEV_LOGIN cannot be enabled when FLASK_ENV=production"
+        )
+    if enabled:
+        # Loud startup warning for local/dev
+        banner = (
+            "\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+            "!!  WARNING: ENABLE_DEV_LOGIN is ON                       !!\n"
+            "!!  POST /api/auth/dev-login bypasses Microsoft SSO.      !!\n"
+            "!!  NEVER enable this setting in production.              !!\n"
+            "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n"
+        )
+        print(banner, file=sys.stderr)
+        logger.warning(
+            "ENABLE_DEV_LOGIN is enabled (FLASK_ENV=%s) — local SSO bypass active",
+            env or "development",
+        )
+
 
 def create_app(config_class=Config):
     """Create and configure the Flask application."""
     app = Flask(__name__)
     app.config.from_object(config_class)
+    _assert_dev_login_safe(app)
 
     CORS(
         app,
@@ -49,7 +84,14 @@ def create_app(config_class=Config):
 
     @app.get("/api/health")
     def health():
-        return jsonify({"status": "ok"})
+        return jsonify(
+            {
+                "status": "ok",
+                # Surface so operators / the SPA can detect unsafe local bypass.
+                "dev_login_enabled": bool(app.config.get("ENABLE_DEV_LOGIN")),
+                "flask_env": app.config.get("FLASK_ENV"),
+            }
+        )
 
     return app
 

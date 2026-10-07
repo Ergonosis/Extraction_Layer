@@ -87,6 +87,56 @@
   color: #94a3b8;
 }
 
+.login-dev-panel {
+  margin-top: 24px;
+  width: 100%;
+  padding-top: 20px;
+  border-top: 1px dashed #fdba74;
+}
+
+.login-dev-warning {
+  margin: 0 0 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #c2410c;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.login-dev-button {
+  width: 100%;
+  min-height: 44px;
+  border-radius: 10px;
+  border: 1px solid #fb923c;
+  background: #fff7ed;
+  color: #9a3412;
+  font: inherit;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login-dev-button:hover:not(:disabled) {
+  background: #ffedd5;
+}
+
+.login-dev-button:disabled {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+.login-dev-hint,
+.login-dev-error {
+  margin: 12px 0 0;
+  font-size: 0.8125rem;
+  color: #9a3412;
+  line-height: 1.4;
+}
+
+.login-dev-error {
+  color: #b91c1c;
+}
+
 @media (max-width: 480px) {
   .login-card {
     padding: 40px 24px 28px;

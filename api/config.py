@@ -85,6 +85,10 @@ class Config:
     PORTAL_URL = os.getenv("PORTAL_URL", "http://localhost:5175").rstrip("/")
     PORTAL_POST_LOGIN_PATH = os.getenv("PORTAL_POST_LOGIN_PATH", "/connections")
 
+    # LOCAL ONLY: POST /api/auth/dev-login. Never enable in production.
+    # Requires FLASK_ENV != production AND ENABLE_DEV_LOGIN=true.
+    ENABLE_DEV_LOGIN = _env_bool("ENABLE_DEV_LOGIN", False)
+
     # Plaid (used by later issues)
     PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID", "")
     PLAID_SECRET = _load_secret("PLAID_SECRET", "")

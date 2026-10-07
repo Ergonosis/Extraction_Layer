@@ -1,0 +1,131 @@
+.integration-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.04);
+}
+
+.integration-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.integration-card-header h2 {
+  margin: 0;
+  font-size: 1.125rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.status-not_connected {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-connecting {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.status-connected {
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.status-reauth_required {
+  background: #fffbeb;
+  color: #b45309;
+}
+
+.status-error {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
+.integration-card-body p {
+  margin: 0 0 8px;
+  color: #334155;
+  font-size: 0.9375rem;
+}
+
+.integration-muted {
+  color: #64748b !important;
+  font-size: 0.875rem !important;
+}
+
+.integration-permissions {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.integration-permissions li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 0.875rem;
+  color: #475569;
+}
+
+.perm-on {
+  color: #047857;
+  font-weight: 600;
+}
+
+.perm-off {
+  color: #94a3b8;
+}
+
+.integration-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.integration-card-actions button {
+  border-radius: 8px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.btn-primary {
+  border: none;
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.btn-secondary {
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+}
+
+.btn-danger {
+  border: 1px solid #fecaca;
+  background: #fff;
+  color: #b91c1c;
+}

@@ -80,3 +80,41 @@ Verify without a real Entra redirect:
 ```bash
 python scripts/verify_portal_auth.py
 ```
+
+## LOCAL ONLY — auth bypass (never in production)
+
+Two **development-only** escapes exist so you can view the portal without Microsoft SSO.
+Both must be **off** before any production / shared deployment.
+
+### 1) API: `ENABLE_DEV_LOGIN` (real session, no Entra)
+
+In repo-root `.env` (local only):
+
+```env
+FLASK_ENV=development
+ENABLE_DEV_LOGIN=true
+```
+
+Then `POST /api/auth/dev-login` (with CSRF) creates a session as `dev@localhost`.
+
+- App **refuses to start** if `ENABLE_DEV_LOGIN=true` and `FLASK_ENV=production`.
+- Startup prints a loud stderr warning when enabled.
+- `GET /api/health` and `GET /api/auth/dev-status` report `dev_login_enabled`.
+
+### 2) SPA: `VITE_DEV_BYPASS_AUTH` (UI-only mock user)
+
+In `portal/.env.local`:
+
+```env
+VITE_DEV_BYPASS_AUTH=true
+```
+
+Skips `AuthGuard` and injects a mock user so you can browse the shell without the API.
+Integrations API still needs a real session (use #1) or you will see load errors.
+
+### Pre-production checklist
+
+- [ ] `ENABLE_DEV_LOGIN` unset or `false`
+- [ ] `VITE_DEV_BYPASS_AUTH` unset or `false` (and not baked into a production build)
+- [ ] `/api/health` shows `"dev_login_enabled": false`
+- [ ] No orange **DEV AUTH BYPASS** banner in the UI
