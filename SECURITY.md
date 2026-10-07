@@ -59,3 +59,24 @@ If the only copy of `FERNET_KEY` is lost, stored tokens cannot be recovered. Use
 ## Flask `SECRET_KEY`
 
 Used to sign sessions. Load from Secret Manager in production. Rotating it invalidates existing sessions (users sign in again). That is expected.
+
+## Microsoft Entra SSO (portal login)
+
+Register a **multi-tenant** app registration in Entra ID (“Accounts in any organizational directory”).
+
+Redirect URI (web): `http://localhost:5000/api/auth/callback` for local Flask (override with `MS_REDIRECT_URI` in production).
+
+Required app env vars:
+
+- `MS_CLIENT_ID`
+- `MS_CLIENT_SECRET` (Secret Manager in production)
+- Optional: `MS_TENANT_ALLOWLIST` (comma-separated tenant IDs; empty = allow any org tenant)
+- Optional: `PORTAL_URL` (default `http://localhost:5173`), `PORTAL_POST_LOGIN_PATH` (default `/connections`)
+
+SSO uses authority `https://login.microsoftonline.com/organizations` and scopes `openid profile email`. The portal session stores only `user_id` and `organization_id` — the Microsoft SSO access token is **not** persisted.
+
+Verify without a real Entra redirect:
+
+```bash
+python scripts/verify_portal_auth.py
+```

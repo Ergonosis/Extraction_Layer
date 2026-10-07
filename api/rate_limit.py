@@ -11,9 +11,10 @@ limiter = Limiter(
     default_limits=["30 per minute"],
 )
 
-# Decorators for later auth / mutation endpoints (issue #21+)
+# Auth / mutation endpoint limits (issue #21+)
 auth_login_limit = limiter.limit("10 per minute")
 auth_callback_limit = limiter.limit("5 per minute")
+auth_me_limit = limiter.limit("30 per minute")
 mutation_limit = limiter.limit("10 per minute")
 strict_mutation_limit = limiter.limit("5 per minute")
 
