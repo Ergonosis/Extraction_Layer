@@ -1,36 +1,28 @@
-import { useEffect, useState } from 'react'
-import './App.css'
-
-type HealthState = 'loading' | 'ok' | 'error'
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+import { AuthGuard } from './components/AuthGuard'
+import { AuthProvider } from './context/AuthContext'
+import { ConnectionsPage } from './pages/ConnectionsPage'
+import { LoginPage } from './pages/LoginPage'
 
 function App() {
-  const [health, setHealth] = useState<HealthState>('loading')
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        return res.json()
-      })
-      .then((data) => {
-        setHealth(data.status === 'ok' ? 'ok' : 'error')
-      })
-      .catch(() => setHealth('error'))
-  }, [])
-
   return (
-    <main className="portal">
-      <h1>Ergonosis Portal</h1>
-      <p>Scaffold placeholder — SSO and connections come in later issues.</p>
-      <p>
-        API health:{' '}
-        <strong>
-          {health === 'loading' && 'checking…'}
-          {health === 'ok' && 'ok (Vite proxy → Flask)'}
-          {health === 'error' && 'unreachable (is Flask running on :5000?)'}
-        </strong>
-      </p>
-    </main>
+    <AuthProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
+          <Route
+            path="/connections"
+            element={
+              <AuthGuard>
+                <ConnectionsPage />
+              </AuthGuard>
+            }
+          />
+          <Route path="/" element={<Navigate to="/connections" replace />} />
+          <Route path="*" element={<Navigate to="/connections" replace />} />
+        </Routes>
+      </BrowserRouter>
+    </AuthProvider>
   )
 }
 
