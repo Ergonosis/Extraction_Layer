@@ -1,23 +1,8 @@
 import react from '@vitejs/plugin-react'
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), '')
-  // Tolerate UTF-8 BOM on Windows-created .env.local keys
-  const bypassRaw =
-    env.VITE_DEV_BYPASS_AUTH ??
-    env['\ufeffVITE_DEV_BYPASS_AUTH'] ??
-    ''
-  const bypassOn = ['true', '1', 'yes', 'on'].includes(bypassRaw.trim().toLowerCase())
-  if (mode === 'production' && bypassOn) {
-    throw new Error(
-      'Refusing production build: VITE_DEV_BYPASS_AUTH is enabled. ' +
-        'Unset it before deploying.',
-    )
-  }
-
-  return {
+export default defineConfig({
   plugins: [react()],
   server: {
     // 5173 is commonly used by other local apps; portal owns 5175.
@@ -41,5 +26,4 @@ export default defineConfig(({ mode }) => {
       },
     },
   },
-}
 })

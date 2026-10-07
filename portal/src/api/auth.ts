@@ -1,4 +1,4 @@
-import { api, clearCsrfToken } from './client'
+import { api, clearCsrfToken, ensureCsrfToken } from './client'
 
 export type Organization = {
   id: number
@@ -10,7 +10,7 @@ export type AuthUser = {
   id: number
   email: string
   display_name: string
-  created_at: string | null
+  created_at?: string | null
   organization: Organization
 }
 
@@ -26,8 +26,11 @@ export async function fetchCurrentUser(): Promise<AuthUser | null> {
 }
 
 export async function logout(): Promise<void> {
-  await api.post('/api/auth/logout')
-  clearCsrfToken()
+  try {
+    await api.post('/api/auth/logout')
+  } finally {
+    clearCsrfToken()
+  }
 }
 
 /** Full-page redirect into the Flask → Microsoft SSO flow. */
@@ -47,6 +50,9 @@ export async function fetchDevLoginStatus(): Promise<boolean> {
 
 /** LOCAL ONLY — requires ENABLE_DEV_LOGIN on the API. */
 export async function devLogin(): Promise<AuthUser> {
+  // Always mint a fresh CSRF token so post-logout logins don't reuse a stale one.
+  clearCsrfToken()
+  await ensureCsrfToken(api, true)
   const { data } = await api.post<{ user: AuthUser; warning?: string }>('/api/auth/dev-login')
   if (data.warning) {
     // eslint-disable-next-line no-console

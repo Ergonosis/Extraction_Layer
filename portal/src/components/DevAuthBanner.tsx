@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api/client'
-import { DEV_UI_BYPASS_AUTH } from '../config/devAuth'
 import './DevAuthBanner.css'
 
 /**
@@ -25,18 +24,14 @@ export function DevAuthBanner() {
     }
   }, [])
 
-  if (!DEV_UI_BYPASS_AUTH && !apiDevLogin) return null
-
-  const parts: string[] = []
-  if (DEV_UI_BYPASS_AUTH) parts.push('VITE_DEV_BYPASS_AUTH')
-  if (apiDevLogin) parts.push('ENABLE_DEV_LOGIN')
+  if (!apiDevLogin) return null
 
   return (
     <div className="dev-auth-banner" role="alert">
       <strong>DEV AUTH BYPASS ON</strong>
       <span>
         {' '}
-        ({parts.join(' + ')}) — local only. Turn these off before production.
+        (ENABLE_DEV_LOGIN) — local only. Turn this off before production.
       </span>
     </div>
   )

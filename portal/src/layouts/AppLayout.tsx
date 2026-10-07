@@ -1,9 +1,15 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import './AppLayout.css'
 
 export function AppLayout() {
   const { user, logout } = useAuth()
+  const navigate = useNavigate()
+
+  const onSignOut = async () => {
+    await logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <div className="app-layout">
@@ -34,7 +40,7 @@ export function AppLayout() {
             {user?.display_name}
           </p>
           <p className="app-sidebar-org">{user?.organization.name}</p>
-          <button type="button" className="app-sidebar-logout" onClick={() => void logout()}>
+          <button type="button" className="app-sidebar-logout" onClick={() => void onSignOut()}>
             Sign out
           </button>
         </div>

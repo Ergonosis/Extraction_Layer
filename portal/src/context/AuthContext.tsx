@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from 'react'
@@ -14,17 +15,16 @@ import {
   logout as logoutRequest,
   type AuthUser,
 } from '../api/auth'
-import { DEV_MOCK_USER, DEV_UI_BYPASS_AUTH } from '../config/devAuth'
 
 type AuthStatus = 'loading' | 'authenticated' | 'unauthenticated'
 
 type AuthContextValue = {
   status: AuthStatus
   user: AuthUser | null
-  /** True when VITE_DEV_BYPASS_AUTH is providing a mock user (no real session). */
-  uiBypassActive: boolean
   refresh: () => Promise<void>
   logout: () => Promise<void>
+  /** Explicit local API login (ENABLE_DEV_LOGIN). */
+  loginAsDev: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -33,8 +33,9 @@ async function ensureDevSession(): Promise<AuthUser | null> {
   const enabled = await fetchDevLoginStatus()
   if (!enabled) return null
   try {
-    await devLogin()
-    return await fetchCurrentUser()
+    const user = await devLogin()
+    // Prefer the payload from login; fall back to /me if needed.
+    return user ?? (await fetchCurrentUser())
   } catch {
     return null
   }
@@ -43,50 +44,35 @@ async function ensureDevSession(): Promise<AuthUser | null> {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>('loading')
   const [user, setUser] = useState<AuthUser | null>(null)
-  const [uiBypassActive, setUiBypassActive] = useState(false)
+  // After Sign out, do not immediately re-create a local session.
+  const suppressAutoDevLoginRef = useRef(false)
 
   const refresh = useCallback(async () => {
     try {
       let next = await fetchCurrentUser()
 
-      // Prefer a real local session over UI-only mock so /api/integrations works.
-      if (!next) {
+      if (!next && !suppressAutoDevLoginRef.current) {
         next = await ensureDevSession()
       }
 
       if (next) {
         setUser(next)
-        setUiBypassActive(false)
-        setStatus('authenticated')
-        return
-      }
-
-      if (DEV_UI_BYPASS_AUTH) {
-        setUser({ ...DEV_MOCK_USER })
-        setUiBypassActive(true)
         setStatus('authenticated')
         return
       }
 
       setUser(null)
-      setUiBypassActive(false)
       setStatus('unauthenticated')
     } catch {
-      const recovered = await ensureDevSession()
-      if (recovered) {
-        setUser(recovered)
-        setUiBypassActive(false)
-        setStatus('authenticated')
-        return
-      }
-      if (DEV_UI_BYPASS_AUTH) {
-        setUser({ ...DEV_MOCK_USER })
-        setUiBypassActive(true)
-        setStatus('authenticated')
-        return
+      if (!suppressAutoDevLoginRef.current) {
+        const recovered = await ensureDevSession()
+        if (recovered) {
+          setUser(recovered)
+          setStatus('authenticated')
+          return
+        }
       }
       setUser(null)
-      setUiBypassActive(false)
       setStatus('unauthenticated')
     }
   }, [])
@@ -96,34 +82,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refresh])
 
   const logout = useCallback(async () => {
+    suppressAutoDevLoginRef.current = true
     try {
-      if (!uiBypassActive) {
-        await logoutRequest()
-      }
+      await logoutRequest()
+    } catch {
+      // Already logged out — still clear local auth state.
     } finally {
-      // After logout, try to stay usable in local-dev mode.
-      const recovered = await ensureDevSession()
-      if (recovered) {
-        setUser(recovered)
-        setUiBypassActive(false)
-        setStatus('authenticated')
-        return
-      }
-      if (DEV_UI_BYPASS_AUTH) {
-        setUser({ ...DEV_MOCK_USER })
-        setUiBypassActive(true)
-        setStatus('authenticated')
-      } else {
-        setUser(null)
-        setUiBypassActive(false)
-        setStatus('unauthenticated')
-      }
+      setUser(null)
+      setStatus('unauthenticated')
     }
-  }, [uiBypassActive])
+  }, [])
+
+  const loginAsDev = useCallback(async () => {
+    suppressAutoDevLoginRef.current = false
+    const next = await ensureDevSession()
+    if (!next) {
+      throw new Error('Dev login failed')
+    }
+    setUser(next)
+    setStatus('authenticated')
+  }, [])
 
   const value = useMemo(
-    () => ({ status, user, uiBypassActive, refresh, logout }),
-    [status, user, uiBypassActive, refresh, logout],
+    () => ({
+      status,
+      user,
+      refresh,
+      logout,
+      loginAsDev,
+    }),
+    [status, user, refresh, logout, loginAsDev],
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
