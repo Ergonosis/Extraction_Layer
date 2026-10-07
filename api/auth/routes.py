@@ -3,33 +3,23 @@
 from __future__ import annotations
 
 import secrets
-from datetime import datetime, timezone
 
 from flask import current_app, jsonify, redirect, request, session
 
 from api.auth import bp
-from api.auth.decorators import login_required
 from api.auth import msal_client
+from api.auth.decorators import login_required
+from api.auth.service import AuthError, complete_sso_login
 from api.auth.session_utils import regenerate_session, safe_post_login_url
 from api.extensions import db
 from api.middleware import ensure_csrf_token
-from api.models import Organization, User
+from api.models import User
 from api.rate_limit import (
     auth_callback_limit,
     auth_login_limit,
     auth_me_limit,
     mutation_limit,
 )
-
-
-def _utcnow():
-    return datetime.now(timezone.utc)
-
-
-def _org_name_from_claims(email: str, tid: str) -> str:
-    if email and "@" in email:
-        return email.split("@", 1)[1]
-    return tid
 
 
 @bp.get("/ping")
@@ -89,7 +79,7 @@ def login():
 @bp.get("/callback")
 @auth_callback_limit
 def callback():
-    """Handle Entra redirect: exchange code, upsert org/user, establish session."""
+    """Handle Entra redirect: validate OAuth state, complete login, set session."""
     error = request.args.get("error")
     if error:
         detail = request.args.get("error_description") or error
@@ -117,81 +107,18 @@ def callback():
         )
 
     try:
-        result = msal_client.exchange_auth_code(code)
-    except RuntimeError as exc:
-        return jsonify({"error": "Authentication failed", "detail": str(exc)}), 401
-
-    if "error" in result or "id_token_claims" not in result:
-        detail = result.get("error_description") or result.get("error") or "token exchange failed"
-        return jsonify({"error": "Authentication failed", "detail": detail}), 401
-
-    claims = result["id_token_claims"]
-    # Intentionally discard access_token / refresh_token — SSO is identity only.
-    oid = claims.get("oid")
-    tid = claims.get("tid")
-    email = (
-        claims.get("email")
-        or claims.get("preferred_username")
-        or ""
-    )
-    name = claims.get("name") or email or "User"
-
-    if not oid or not tid:
-        return (
-            jsonify(
-                {
-                    "error": "Authentication failed",
-                    "detail": "Missing oid or tid in id_token claims",
-                }
-            ),
-            401,
+        result = complete_sso_login(
+            code,
+            tenant_allowlist=current_app.config.get("MS_TENANT_ALLOWLIST") or [],
         )
-
-    allowlist = current_app.config.get("MS_TENANT_ALLOWLIST") or []
-    if allowlist and tid not in allowlist:
-        return (
-            jsonify(
-                {
-                    "error": "Tenant not allowed",
-                    "detail": "This Microsoft tenant is not permitted to sign in",
-                }
-            ),
-            403,
-        )
-
-    org = Organization.query.filter_by(ms_tenant_id=tid).one_or_none()
-    if org is None:
-        org = Organization(
-            name=_org_name_from_claims(email, tid),
-            ms_tenant_id=tid,
-        )
-        db.session.add(org)
-        db.session.flush()
-
-    user = User.query.filter_by(organization_id=org.id, ms_oid=oid).one_or_none()
-    if user is None:
-        user = User(
-            organization_id=org.id,
-            email=email or f"{oid}@{tid}",
-            display_name=name,
-            ms_oid=oid,
-            last_login=_utcnow(),
-        )
-        db.session.add(user)
-    else:
-        if email:
-            user.email = email
-        if name:
-            user.display_name = name
-        user.last_login = _utcnow()
-
-    db.session.commit()
+    except AuthError as exc:
+        return jsonify({"error": exc.error, "detail": exc.detail}), exc.status_code
 
     # Session fixation prevention: new sid before attaching identity
     regenerate_session()
     session.permanent = True
-    session["user_id"] = user.id
-    session["organization_id"] = org.id
+    session["user_id"] = result.user_id
+    session["organization_id"] = result.organization_id
     ensure_csrf_token()
 
     return redirect(safe_post_login_url(post_login_redirect), code=302)

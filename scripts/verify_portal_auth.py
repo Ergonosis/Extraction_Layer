@@ -250,10 +250,90 @@ def check_auth_flow() -> None:
     ok(f"cleaned verification orgs (prior user_id={user_id})")
 
 
+def check_auth_service() -> None:
+    """Unit-style checks against complete_sso_login (no HTTP)."""
+    step("Auth service layer (injected MSAL exchange)")
+    from api.app import create_app
+    from api.auth.service import AuthError, complete_sso_login, org_name_from_claims
+    from api.extensions import db
+    from api.models import Organization, User
+
+    if org_name_from_claims("a@contoso.com", "tid") != "contoso.com":
+        fail("org_name_from_claims should use email domain")
+    if org_name_from_claims("", "tid-only") != "tid-only":
+        fail("org_name_from_claims should fall back to tid")
+    ok("org_name_from_claims pure helper")
+
+    tid = str(uuid.uuid4())
+    oid = str(uuid.uuid4())
+    app = create_app()
+
+    def exchange_ok(_code: str) -> dict:
+        return {
+            "id_token_claims": {
+                "oid": oid,
+                "tid": tid,
+                "email": "bob@service.test",
+                "name": "Bob",
+            },
+            "access_token": "discard-me",
+        }
+
+    def exchange_bad_claims(_code: str) -> dict:
+        return {"id_token_claims": {"email": "x@y.z"}}
+
+    with app.app_context():
+        try:
+            complete_sso_login("x", exchange_auth_code=exchange_bad_claims)
+            fail("expected AuthError for missing oid/tid")
+        except AuthError as exc:
+            if exc.status_code != 401:
+                fail(f"missing claims status expected 401, got {exc.status_code}")
+        ok("missing oid/tid raises AuthError 401")
+
+        try:
+            complete_sso_login(
+                "x",
+                tenant_allowlist=["other-tenant"],
+                exchange_auth_code=exchange_ok,
+            )
+            fail("expected AuthError for allowlist")
+        except AuthError as exc:
+            if exc.status_code != 403 or exc.error != "Tenant not allowed":
+                fail(f"allowlist error unexpected: {exc.error} {exc.status_code}")
+        ok("tenant allowlist raises AuthError 403")
+
+        first = complete_sso_login("code1", exchange_auth_code=exchange_ok)
+        second = complete_sso_login(
+            "code2",
+            exchange_auth_code=lambda _c: {
+                "id_token_claims": {
+                    "oid": oid,
+                    "tid": tid,
+                    "email": "bob@service.test",
+                    "name": "Bob Two",
+                }
+            },
+        )
+        if first.user_id != second.user_id or first.organization_id != second.organization_id:
+            fail("service upsert should reuse same user/org ids")
+        user = db.session.get(User, first.user_id)
+        if user is None or user.display_name != "Bob Two":
+            fail("service should update display_name on re-login")
+        ok("complete_sso_login upserts and reuses identity")
+
+        org = Organization.query.filter_by(ms_tenant_id=tid).one_or_none()
+        if org:
+            User.query.filter_by(organization_id=org.id).delete()
+            db.session.delete(org)
+            db.session.commit()
+        ok("cleaned service-layer verification rows")
+
+
 def main() -> int:
     print("Portal auth verification (issue #21)")
     failed = 0
-    for fn in (check_infra, check_auth_flow):
+    for fn in (check_infra, check_auth_flow, check_auth_service):
         try:
             fn()
         except CheckFailed as exc:
