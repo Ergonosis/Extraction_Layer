@@ -1,4 +1,5 @@
 import type { Integration } from '../api/integrations'
+import { PlaidConnect } from './PlaidConnect'
 import './IntegrationCard.css'
 
 const STATUS_LABELS: Record<string, string> = {
@@ -11,13 +12,15 @@ const STATUS_LABELS: Record<string, string> = {
 
 type Props = {
   integration: Integration
+  onPlaidUpdated?: (next: Integration) => void
 }
 
-export function IntegrationCard({ integration }: Props) {
+export function IntegrationCard({ integration, onPlaidUpdated }: Props) {
   const statusClass = `status-badge status-${integration.status}`
   const statusText = STATUS_LABELS[integration.status] || integration.status
   const isConnected = integration.status === 'connected'
   const needsReauth = integration.status === 'reauth_required'
+  const isPlaid = integration.provider === 'plaid'
 
   return (
     <article className="integration-card">
@@ -54,29 +57,33 @@ export function IntegrationCard({ integration }: Props) {
         )}
       </div>
 
-      <footer className="integration-card-actions">
-        {/* Connect flows land in #24 / #25 — buttons are visible but inactive for now. */}
-        {!isConnected && !needsReauth && (
-          <button type="button" className="btn-primary" disabled title="Coming in a later issue">
-            Connect
-          </button>
-        )}
-        {needsReauth && (
-          <button type="button" className="btn-primary" disabled title="Coming in a later issue">
-            Reconnect
-          </button>
-        )}
-        {isConnected && (
-          <>
-            <button type="button" className="btn-secondary" disabled title="Coming in a later issue">
+      {isPlaid && onPlaidUpdated ? (
+        <PlaidConnect integration={integration} onUpdated={onPlaidUpdated} />
+      ) : (
+        <footer className="integration-card-actions">
+          {/* MS Graph connect flows land in a later issue. */}
+          {!isConnected && !needsReauth && (
+            <button type="button" className="btn-primary" disabled title="Coming in a later issue">
+              Connect
+            </button>
+          )}
+          {needsReauth && (
+            <button type="button" className="btn-primary" disabled title="Coming in a later issue">
               Reconnect
             </button>
-            <button type="button" className="btn-danger" disabled title="Coming in a later issue">
-              Disconnect
-            </button>
-          </>
-        )}
-      </footer>
+          )}
+          {isConnected && (
+            <>
+              <button type="button" className="btn-secondary" disabled title="Coming in a later issue">
+                Reconnect
+              </button>
+              <button type="button" className="btn-danger" disabled title="Coming in a later issue">
+                Disconnect
+              </button>
+            </>
+          )}
+        </footer>
+      )}
     </article>
   )
 }

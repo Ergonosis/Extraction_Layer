@@ -81,6 +81,17 @@ Verify without a real Entra redirect:
 python scripts/verify_portal_auth.py
 ```
 
+## Plaid Link lifecycle (`/api/plaid/*`)
+
+- `POST /connect` (10/min), `POST /exchange` (5/min), `POST /disconnect` (5/min) require login + CSRF.
+- `GET /status` (15/min) requires login; never returns access tokens.
+- Access tokens are Fernet-encrypted into `plaid_credentials.access_token_enc` before any DB write. Plaintext exists only in memory for Plaid API calls.
+- Local/sandbox: set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, and `FERNET_KEY`.
+
+```bash
+python scripts/verify_portal_plaid.py
+```
+
 ## LOCAL ONLY — auth bypass (never in production)
 
 One development escape lets you use the portal without Microsoft SSO:

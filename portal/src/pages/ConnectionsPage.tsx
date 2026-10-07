@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { fetchIntegrations, type Integration } from '../api/integrations'
+import { plaidStatus } from '../api/plaid'
 import { IntegrationCard } from '../components/IntegrationCard'
 import './ConnectionsPage.css'
 
@@ -8,14 +9,34 @@ export function ConnectionsPage() {
   const [integrations, setIntegrations] = useState<Integration[] | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const upsertIntegration = useCallback((next: Integration) => {
+    setIntegrations((prev) => {
+      if (!prev) return [next]
+      const idx = prev.findIndex((row) => row.provider === next.provider)
+      if (idx === -1) return [...prev, next]
+      const copy = [...prev]
+      copy[idx] = next
+      return copy
+    })
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     void (async () => {
       try {
         const rows = await fetchIntegrations()
-        if (!cancelled) {
-          setIntegrations(rows)
-          setError(null)
+        if (cancelled) return
+        setIntegrations(rows)
+        setError(null)
+
+        const plaid = rows.find((row) => row.provider === 'plaid')
+        if (plaid?.status === 'connected') {
+          try {
+            const { integration } = await plaidStatus()
+            if (!cancelled) upsertIntegration(integration)
+          } catch {
+            // Status check is best-effort; keep list payload if it fails.
+          }
         }
       } catch (err) {
         if (cancelled) return
@@ -34,7 +55,7 @@ export function ConnectionsPage() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [upsertIntegration])
 
   return (
     <div className="connections-page">
@@ -54,7 +75,11 @@ export function ConnectionsPage() {
       {integrations && integrations.length > 0 && (
         <div className="connections-grid">
           {integrations.map((item) => (
-            <IntegrationCard key={item.provider} integration={item} />
+            <IntegrationCard
+              key={item.provider}
+              integration={item}
+              onPlaidUpdated={item.provider === 'plaid' ? upsertIntegration : undefined}
+            />
           ))}
         </div>
       )}
