@@ -1,4 +1,4 @@
-"""Integrations blueprint package."""
+"""Integrations blueprint: dashboard status (connect flows in later issues)."""
 
 from flask import Blueprint
 

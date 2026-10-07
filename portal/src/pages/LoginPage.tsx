@@ -1,5 +1,7 @@
+import { useEffect, useState } from 'react'
+import { isAxiosError } from 'axios'
 import { Navigate } from 'react-router-dom'
-import { startMicrosoftLogin } from '../api/auth'
+import { fetchDevLoginStatus, startMicrosoftLogin } from '../api/auth'
 import { useAuth } from '../context/AuthContext'
 import './LoginPage.css'
 
@@ -56,7 +58,14 @@ function ShieldLockIcon() {
 }
 
 export function LoginPage() {
-  const { status } = useAuth()
+  const { status, loginAsDev } = useAuth()
+  const [apiDevLogin, setApiDevLogin] = useState(false)
+  const [devBusy, setDevBusy] = useState(false)
+  const [devError, setDevError] = useState<string | null>(null)
+
+  useEffect(() => {
+    void fetchDevLoginStatus().then(setApiDevLogin)
+  }, [])
 
   if (status === 'loading') {
     return (
@@ -68,6 +77,26 @@ export function LoginPage() {
 
   if (status === 'authenticated') {
     return <Navigate to="/connections" replace />
+  }
+
+  const onDevLogin = async () => {
+    setDevBusy(true)
+    setDevError(null)
+    try {
+      await loginAsDev()
+    } catch (err) {
+      if (isAxiosError(err) && !err.response) {
+        setDevError('Could not reach the API. Is Flask running on :5000?')
+      } else if (isAxiosError(err) && err.response?.status === 404) {
+        setDevError('Dev login is disabled. Set ENABLE_DEV_LOGIN=true and restart Flask.')
+      } else {
+        setDevError(
+          'Dev login failed. Restart Flask with ENABLE_DEV_LOGIN=true, then try again.',
+        )
+      }
+    } finally {
+      setDevBusy(false)
+    }
   }
 
   return (
@@ -85,6 +114,23 @@ export function LoginPage() {
           <span>Sign in with Microsoft</span>
         </button>
         <p className="login-footer">Sign in with your organization account</p>
+
+        {apiDevLogin && (
+          <div className="login-dev-panel">
+            <p className="login-dev-warning">
+              LOCAL ONLY — disable before production
+            </p>
+            <button
+              type="button"
+              className="login-dev-button"
+              disabled={devBusy}
+              onClick={() => void onDevLogin()}
+            >
+              {devBusy ? 'Signing in…' : 'Continue as local dev user'}
+            </button>
+            {devError && <p className="login-dev-error">{devError}</p>}
+          </div>
+        )}
       </div>
     </div>
   )

@@ -9,6 +9,7 @@ from flask import current_app, jsonify, redirect, request, session
 from api.auth import bp
 from api.auth import msal_client
 from api.auth.decorators import login_required
+from api.auth.dev_login import is_dev_login_allowed, upsert_dev_identity
 from api.auth.service import AuthError, complete_sso_login
 from api.auth.session_utils import regenerate_session, safe_post_login_url
 from api.extensions import db
@@ -154,3 +155,63 @@ def logout():
     session.clear()
     session.modified = True
     return jsonify({"status": "logged_out"})
+
+
+@bp.get("/dev-status")
+def dev_status():
+    """Whether local SSO bypass endpoints are available (never true in production)."""
+    allowed = is_dev_login_allowed()
+    return jsonify(
+        {
+            "dev_login_enabled": allowed,
+            "warning": (
+                "LOCAL ONLY — disable ENABLE_DEV_LOGIN before production"
+                if allowed
+                else None
+            ),
+        }
+    )
+
+
+@bp.post("/dev-login")
+@mutation_limit
+def dev_login():
+    """Create a real session as the fixed local-dev user (no Microsoft).
+
+    Requires ENABLE_DEV_LOGIN=true and FLASK_ENV != production.
+    CSRF applies like other POSTs. NEVER enable in production.
+    """
+    if not is_dev_login_allowed():
+        return (
+            jsonify(
+                {
+                    "error": "Dev login disabled",
+                    "detail": "Set ENABLE_DEV_LOGIN=true only in non-production",
+                }
+            ),
+            404,
+        )
+
+    user, org = upsert_dev_identity()
+    regenerate_session()
+    session.permanent = True
+    session["user_id"] = user.id
+    session["organization_id"] = org.id
+    ensure_csrf_token()
+
+    return jsonify(
+        {
+            "status": "ok",
+            "warning": "LOCAL ONLY — disable ENABLE_DEV_LOGIN before production",
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "display_name": user.display_name,
+                "organization": {
+                    "id": org.id,
+                    "name": org.name,
+                    "ms_tenant_id": org.ms_tenant_id,
+                },
+            },
+        }
+    )

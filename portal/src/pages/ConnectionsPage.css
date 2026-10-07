@@ -1,62 +1,33 @@
-.app-shell {
-  min-height: 100svh;
-  text-align: left;
-  background: #f8fafc;
-  color: #0f172a;
+.connections-page {
+  max-width: 960px;
 }
 
-.app-shell-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 28px 32px;
-  border-bottom: 1px solid #e2e8f0;
-  background: #ffffff;
-}
-
-.app-shell-brand {
-  margin: 0 0 4px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: #64748b;
-  letter-spacing: 0.02em;
-}
-
-.app-shell-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
+.connections-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
   font-weight: 700;
   color: #0f172a;
 }
 
-.app-shell-logout {
-  border: 1px solid #cbd5e1;
-  background: #ffffff;
-  color: #334155;
-  border-radius: 8px;
-  padding: 8px 14px;
-  font: inherit;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
+.connections-header p {
+  margin: 0 0 28px;
+  color: #64748b;
+  font-size: 1rem;
 }
 
-.app-shell-logout:hover {
-  background: #f1f5f9;
+.connections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
 }
 
-.app-shell-main {
-  padding: 32px;
-  max-width: 720px;
+.connections-loading,
+.connections-error {
+  margin: 0;
+  color: #64748b;
 }
 
-.app-shell-main p {
-  margin: 0 0 12px;
-  color: #334155;
-  line-height: 1.5;
-}
-
-.app-shell-muted {
-  color: #64748b !important;
+.connections-error {
+  color: #b91c1c;
+  margin-bottom: 16px;
 }

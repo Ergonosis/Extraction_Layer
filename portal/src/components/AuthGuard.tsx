@@ -21,5 +21,5 @@ export function AuthGuard({ children }: Props) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />
   }
 
-  return children
+  return <div className="app-frame-fill">{children}</div>
 }
