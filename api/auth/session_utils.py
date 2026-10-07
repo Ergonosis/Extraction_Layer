@@ -36,7 +36,7 @@ def regenerate_session() -> None:
 
 def safe_post_login_url(candidate: str | None) -> str:
     """Return a portal URL only (blocks open redirects)."""
-    portal = (current_app.config.get("PORTAL_URL") or "http://localhost:5173").rstrip(
+    portal = (current_app.config.get("PORTAL_URL") or "http://localhost:5175").rstrip(
         "/"
     )
     default_path = current_app.config.get("PORTAL_POST_LOGIN_PATH") or "/connections"

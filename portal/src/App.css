@@ -1,17 +1,1 @@
-.portal {
-  max-width: 40rem;
-  margin: 4rem auto;
-  padding: 0 1.5rem;
-  font-family: Georgia, 'Times New Roman', serif;
-  color: #1a1a1a;
-}
-
-.portal h1 {
-  font-size: 2rem;
-  margin-bottom: 0.5rem;
-}
-
-.portal p {
-  line-height: 1.5;
-  color: #333;
-}
+/* App layout styles live in page CSS modules (LoginPage, ConnectionsPage). */

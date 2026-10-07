@@ -68,9 +68,10 @@ class Config:
         "MS_AUTHORITY",
         "https://login.microsoftonline.com/organizations",
     )
+    # Local default goes through the Vite proxy so the session cookie is set on the SPA origin.
     MS_REDIRECT_URI = os.getenv(
         "MS_REDIRECT_URI",
-        "http://localhost:5000/api/auth/callback",
+        "http://localhost:5175/api/auth/callback",
     )
     # Comma-separated Entra tenant IDs; empty = allow any organizational tenant
     MS_TENANT_ALLOWLIST = [
@@ -81,7 +82,7 @@ class Config:
     MS_SSO_SCOPES = ["openid", "profile", "email"]
 
     # Where the browser returns after successful SSO
-    PORTAL_URL = os.getenv("PORTAL_URL", "http://localhost:5173").rstrip("/")
+    PORTAL_URL = os.getenv("PORTAL_URL", "http://localhost:5175").rstrip("/")
     PORTAL_POST_LOGIN_PATH = os.getenv("PORTAL_POST_LOGIN_PATH", "/connections")
 
     # Plaid (used by later issues)
@@ -95,7 +96,7 @@ class Config:
     # CORS: portal origin for local Vite dev server
     CORS_ORIGINS = [
         origin.strip()
-        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5173").split(",")
+        for origin in os.getenv("CORS_ORIGINS", "http://localhost:5175").split(",")
         if origin.strip()
     ]
 

@@ -64,14 +64,14 @@ Used to sign sessions. Load from Secret Manager in production. Rotating it inval
 
 Register a **multi-tenant** app registration in Entra ID (“Accounts in any organizational directory”).
 
-Redirect URI (web): `http://localhost:5000/api/auth/callback` for local Flask (override with `MS_REDIRECT_URI` in production).
+Redirect URI (web): `http://localhost:5175/api/auth/callback` for local portal + Vite `/api` proxy (so the session cookie is set on the SPA origin). Override with `MS_REDIRECT_URI` in production. Portal Vite uses port **5175** (`strictPort`) to avoid clashing with other apps on 5173.
 
 Required app env vars:
 
 - `MS_CLIENT_ID`
 - `MS_CLIENT_SECRET` (Secret Manager in production)
 - Optional: `MS_TENANT_ALLOWLIST` (comma-separated tenant IDs; empty = allow any org tenant)
-- Optional: `PORTAL_URL` (default `http://localhost:5173`), `PORTAL_POST_LOGIN_PATH` (default `/connections`)
+- Optional: `PORTAL_URL` (default `http://localhost:5175`), `PORTAL_POST_LOGIN_PATH` (default `/connections`)
 
 SSO uses authority `https://login.microsoftonline.com/organizations` and scopes `openid profile email`. The portal session stores only `user_id` and `organization_id` — the Microsoft SSO access token is **not** persisted.
 
