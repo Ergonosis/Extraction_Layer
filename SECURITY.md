@@ -92,6 +92,18 @@ python scripts/verify_portal_auth.py
 python scripts/verify_portal_plaid.py
 ```
 
+## MS Graph lifecycle (`/api/msgraph/*`)
+
+- `POST /connect` (10/min) validates scopes against the hardcoded allowlist, stores OAuth `state` in session, returns `authorize_url`. CSRF required.
+- `GET /callback` (5/min) exchanges the auth code; Fernet-encrypts access + refresh tokens before DB write; upserts `ms_graph_permissions`.
+- `POST /disconnect` (5/min) deletes credentials **without decrypting** and clears permissions. CSRF required.
+- `GET /status` (15/min) refreshes via MSAL; re-encrypts rotated tokens; sets `reauth_required` on failure. Never returns tokens.
+- Register `MS_GRAPH_REDIRECT_URI` (default `http://localhost:5175/api/msgraph/callback`) in the Entra app.
+
+```bash
+python scripts/verify_portal_msgraph.py
+```
+
 ## LOCAL ONLY — auth bypass (never in production)
 
 One development escape lets you use the portal without Microsoft SSO:

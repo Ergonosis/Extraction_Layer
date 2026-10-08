@@ -1,4 +1,5 @@
 import type { Integration } from '../api/integrations'
+import { MSGraphConnect } from './MSGraphConnect'
 import { PlaidConnect } from './PlaidConnect'
 import './IntegrationCard.css'
 
@@ -13,14 +14,18 @@ const STATUS_LABELS: Record<string, string> = {
 type Props = {
   integration: Integration
   onPlaidUpdated?: (next: Integration) => void
+  onMsGraphUpdated?: (next: Integration) => void
 }
 
-export function IntegrationCard({ integration, onPlaidUpdated }: Props) {
+export function IntegrationCard({
+  integration,
+  onPlaidUpdated,
+  onMsGraphUpdated,
+}: Props) {
   const statusClass = `status-badge status-${integration.status}`
   const statusText = STATUS_LABELS[integration.status] || integration.status
-  const isConnected = integration.status === 'connected'
-  const needsReauth = integration.status === 'reauth_required'
   const isPlaid = integration.provider === 'plaid'
+  const isMsGraph = integration.provider === 'msgraph'
 
   return (
     <article className="integration-card">
@@ -43,7 +48,7 @@ export function IntegrationCard({ integration, onPlaidUpdated }: Props) {
           </p>
         )}
 
-        {integration.provider === 'msgraph' && integration.permissions.length > 0 && (
+        {isMsGraph && integration.permissions.length > 0 && (
           <ul className="integration-permissions">
             {integration.permissions.map((perm) => (
               <li key={perm.scope}>
@@ -59,31 +64,9 @@ export function IntegrationCard({ integration, onPlaidUpdated }: Props) {
 
       {isPlaid && onPlaidUpdated ? (
         <PlaidConnect integration={integration} onUpdated={onPlaidUpdated} />
-      ) : (
-        <footer className="integration-card-actions">
-          {/* MS Graph connect flows land in a later issue. */}
-          {!isConnected && !needsReauth && (
-            <button type="button" className="btn-primary" disabled title="Coming in a later issue">
-              Connect
-            </button>
-          )}
-          {needsReauth && (
-            <button type="button" className="btn-primary" disabled title="Coming in a later issue">
-              Reconnect
-            </button>
-          )}
-          {isConnected && (
-            <>
-              <button type="button" className="btn-secondary" disabled title="Coming in a later issue">
-                Reconnect
-              </button>
-              <button type="button" className="btn-danger" disabled title="Coming in a later issue">
-                Disconnect
-              </button>
-            </>
-          )}
-        </footer>
-      )}
+      ) : isMsGraph && onMsGraphUpdated ? (
+        <MSGraphConnect integration={integration} onUpdated={onMsGraphUpdated} />
+      ) : null}
     </article>
   )
 }

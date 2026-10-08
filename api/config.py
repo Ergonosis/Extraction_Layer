@@ -73,6 +73,11 @@ class Config:
         "MS_REDIRECT_URI",
         "http://localhost:5175/api/auth/callback",
     )
+    # Separate redirect for Graph delegated consent (issue #25) — register in Entra.
+    MS_GRAPH_REDIRECT_URI = os.getenv(
+        "MS_GRAPH_REDIRECT_URI",
+        "http://localhost:5175/api/msgraph/callback",
+    )
     # Comma-separated Entra tenant IDs; empty = allow any organizational tenant
     MS_TENANT_ALLOWLIST = [
         tid.strip()
