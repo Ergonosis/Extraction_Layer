@@ -1,4 +1,1 @@
-export default {
-  'src/**/*.{*js*,*ts*}': ['oxlint', 'prettier --write'],
-  '**/*.{*js*,*ts*}': 'prettier --write',
-}
+export default { '**/*.{,[mc]}[jt]s{,x}': ['oxlint', 'prettier --write'] }
