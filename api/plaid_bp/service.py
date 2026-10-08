@@ -222,6 +222,27 @@ def disconnect(*, user_id: int, organization_id: int) -> dict:
     return {"integration": serialize_integration(integration)}
 
 
+def cancel_connect(*, user_id: int, organization_id: int) -> dict:
+    """Abandon an in-progress Link flow.
+
+    Only clears `connecting` when no credential exists — never wipes a
+    completed connection.
+    """
+    integration = _plaid_integration(user_id=user_id, organization_id=organization_id)
+
+    if integration.plaid_credential is not None:
+        return {"integration": serialize_integration(integration)}
+
+    if integration.status == "connecting":
+        integration.status = "not_connected"
+        integration.connected_account = None
+        integration.connected_at = None
+        integration.updated_at = _utcnow()
+        db.session.commit()
+
+    return {"integration": serialize_integration(integration)}
+
+
 def check_status(*, user_id: int, organization_id: int) -> dict:
     """Call Plaid item_get; surface reauth_required without returning tokens."""
     integration = _plaid_integration(user_id=user_id, organization_id=organization_id)

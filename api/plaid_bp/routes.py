@@ -8,6 +8,7 @@ from api.auth.decorators import login_required
 from api.plaid_bp import bp
 from api.plaid_bp.service import (
     PlaidServiceError,
+    cancel_connect,
     check_status,
     create_link_token,
     disconnect,
@@ -73,6 +74,21 @@ def disconnect_route():
     """Revoke Item at Plaid and delete local encrypted credentials."""
     try:
         payload = disconnect(
+            user_id=session["user_id"],
+            organization_id=session["organization_id"],
+        )
+    except PlaidServiceError as exc:
+        return _error_response(exc)
+    return jsonify(payload)
+
+
+@bp.post("/cancel")
+@mutation_limit
+@login_required
+def cancel_route():
+    """Reset abandoned `connecting` status without revoking credentials."""
+    try:
+        payload = cancel_connect(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
         )

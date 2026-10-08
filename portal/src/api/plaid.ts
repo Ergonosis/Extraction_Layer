@@ -28,6 +28,12 @@ export async function plaidDisconnect(): Promise<PlaidIntegrationResponse> {
   return data
 }
 
+/** Abandon in-progress Link; clears stuck `connecting` without wiping credentials. */
+export async function plaidCancel(): Promise<PlaidIntegrationResponse> {
+  const { data } = await api.post<PlaidIntegrationResponse>('/api/plaid/cancel')
+  return data
+}
+
 export async function plaidStatus(): Promise<PlaidIntegrationResponse> {
   const { data } = await api.get<PlaidIntegrationResponse>('/api/plaid/status')
   return data
