@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { fetchIntegrations, type Integration } from '../api/integrations'
+import { msgraphStatus } from '../api/msgraph'
 import { plaidStatus } from '../api/plaid'
 import { IntegrationCard } from '../components/IntegrationCard'
 import './ConnectionsPage.css'
@@ -35,7 +36,17 @@ export function ConnectionsPage() {
             const { integration } = await plaidStatus()
             if (!cancelled) upsertIntegration(integration)
           } catch {
-            // Status check is best-effort; keep list payload if it fails.
+            // Status check is best-effort.
+          }
+        }
+
+        const msgraph = rows.find((row) => row.provider === 'msgraph')
+        if (msgraph?.status === 'connected') {
+          try {
+            const { integration } = await msgraphStatus()
+            if (!cancelled) upsertIntegration(integration)
+          } catch {
+            // Status check is best-effort.
           }
         }
       } catch (err) {
@@ -79,6 +90,9 @@ export function ConnectionsPage() {
               key={item.provider}
               integration={item}
               onPlaidUpdated={item.provider === 'plaid' ? upsertIntegration : undefined}
+              onMsGraphUpdated={
+                item.provider === 'msgraph' ? upsertIntegration : undefined
+              }
             />
           ))}
         </div>
