@@ -122,6 +122,26 @@ def main() -> int:
         fail(f"expected connecting status: {body}")
     ok("link_token returned; status=connecting")
 
+    step("Cancel clears abandoned connecting status")
+    resp = client.post(
+        "/api/plaid/cancel",
+        headers={"X-CSRF-Token": csrf},
+    )
+    if resp.status_code != 200:
+        fail(f"cancel failed: {resp.status_code} {resp.get_json()}")
+    if resp.get_json().get("integration", {}).get("status") != "not_connected":
+        fail(f"expected not_connected after cancel: {resp.get_json()}")
+    ok("cancel resets to not_connected")
+
+    # Re-enter connecting for the rest of the flow
+    with patch("api.plaid_bp.service.get_plaid_client", return_value=mock_client):
+        resp = client.post(
+            "/api/plaid/connect",
+            headers={"X-CSRF-Token": csrf},
+        )
+    if resp.status_code != 200 or resp.get_json().get("integration", {}).get("status") != "connecting":
+        fail(f"reconnect after cancel failed: {resp.status_code} {resp.get_json()}")
+
     step("Exchange rejects invalid public_token")
     bad = client.post(
         "/api/plaid/exchange",
