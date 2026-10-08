@@ -33,4 +33,7 @@ export let getNpxCmd = () => {
   return detectedCmd
 }
 
-export default { '**/*.{*js*,*ts*,md,yaml}': `${getNpxCmd()} prettier --write` }
+export default {
+  '**/*.{,[mc]}[jt]s': `${getNpxCmd()} prettier --write`,
+  '**/*.{md,yaml}': `${getNpxCmd()} prettier --write`,
+}
