@@ -98,9 +98,19 @@ class Config:
     PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID", "")
     PLAID_SECRET = _load_secret("PLAID_SECRET", "")
     PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")
+    # Where portal-triggered Plaid exports write JSON (issue #27)
+    PLAID_RECORDS_DIR = os.getenv("PLAID_RECORDS_DIR", "records")
 
     # Fernet key for token encryption (used by later issues)
     FERNET_KEY = _load_secret("FERNET_KEY", "")
+    # Optional previous Fernet keys (comma-separated) for decrypt during rotation.
+    FERNET_PREVIOUS_KEYS = [
+        k.strip()
+        for k in os.getenv("FERNET_PREVIOUS_KEYS", "").split(",")
+        if k.strip()
+    ]
+    # When true (or FLASK_ENV=production), prefer Secret Manager for secrets.
+    USE_GCP_SECRETS = _env_bool("USE_GCP_SECRETS", False)
 
     # CORS: portal origin for local Vite dev server
     CORS_ORIGINS = [

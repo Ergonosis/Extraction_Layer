@@ -11,7 +11,11 @@ GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 
 class MicrosoftGraphEmailClient:
     """
-    Microsoft Graph Email Client using client credentials flow.
+    Microsoft Graph data client.
+
+    Supports:
+    - Client credentials (app-only) via __init__ — used by microsoft/usage.py
+    - Delegated access token via from_access_token — used by the portal API
     """
 
     def __init__(
@@ -32,6 +36,21 @@ class MicrosoftGraphEmailClient:
 
         self._access_token = self._acquire_token()
 
+    @classmethod
+    def from_access_token(
+        cls,
+        access_token: str,
+        timeout: int = 30,
+    ) -> "MicrosoftGraphEmailClient":
+        """Build a client that uses an existing delegated (or app) access token."""
+        if not isinstance(access_token, str) or not access_token.strip():
+            raise ValueError("access_token is required")
+        obj = cls.__new__(cls)
+        obj._timeout = timeout
+        obj._app = None
+        obj._access_token = access_token.strip()
+        return obj
+
     def _acquire_token(self) -> str:
         result = self._app.acquire_token_for_client(scopes=GRAPH_SCOPE)
 
@@ -49,9 +68,38 @@ class MicrosoftGraphEmailClient:
             "Content-Type": "application/json",
         }
 
+    def _messages_url(self, user_email: Optional[str], query: str) -> str:
+        mailbox = (user_email or "").strip()
+        if not mailbox or mailbox.lower() == "me":
+            return f"{GRAPH_BASE_URL}/me/messages?{query}"
+        return f"{GRAPH_BASE_URL}/users/{mailbox}/messages?{query}"
+
+    def fetch_profile(self) -> Dict[str, Any]:
+        """Fetch the signed-in user's basic profile (User.Read / GET /me)."""
+        response = requests.get(
+            f"{GRAPH_BASE_URL}/me",
+            headers=self._headers,
+            params={
+                "$select": "id,displayName,mail,userPrincipalName,jobTitle",
+            },
+            timeout=self._timeout,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"Graph API error {response.status_code}: {response.text}"
+            )
+        data = response.json()
+        return {
+            "id": data.get("id"),
+            "display_name": data.get("displayName"),
+            "mail": data.get("mail"),
+            "user_principal_name": data.get("userPrincipalName"),
+            "job_title": data.get("jobTitle"),
+        }
+
     def fetch_messages(
         self,
-        user_email: str,
+        user_email: Optional[str],
         start_datetime: str,
         end_datetime: str,
         select_fields: Optional[List[str]] = None,
@@ -65,7 +113,7 @@ class MicrosoftGraphEmailClient:
         Parameters
         ----------
         user_email : str
-            Target mailbox email.
+            Target mailbox email, or ``me`` / empty for delegated /me/messages.
         start_datetime : str
             ISO 8601 UTC string (e.g. '2026-01-01T00:00:00Z').
         end_datetime : str
@@ -100,13 +148,8 @@ class MicrosoftGraphEmailClient:
         )
 
         select_query = ",".join(select_fields)
-
-        url = (
-            f"{GRAPH_BASE_URL}/users/{user_email}/messages"
-            f"?$filter={filter_query}"
-            f"&$select={select_query}"
-            f"&$top={page_size}"
-        )
+        query = f"$filter={filter_query}&$select={select_query}&$top={page_size}"
+        url = self._messages_url(user_email, query)
 
         messages: List[Dict[str, Any]] = []
         page_count = 0
@@ -125,10 +168,10 @@ class MicrosoftGraphEmailClient:
 
             data = response.json()
 
-            for msg in data.get("value", []):
-                messages.append(
-                    self._normalize_message(msg, strip_html=strip_html)
-                )
+            messages.extend(
+                self._normalize_message(msg, strip_html=strip_html)
+                for msg in data.get("value", [])
+            )
 
             url = data.get("@odata.nextLink")
             page_count += 1
@@ -137,6 +180,81 @@ class MicrosoftGraphEmailClient:
                 break
 
         return messages
+
+    def fetch_events(
+        self,
+        start_datetime: str,
+        end_datetime: str,
+        select_fields: Optional[List[str]] = None,
+        page_size: int = 50,
+        max_pages: Optional[int] = None,
+    ) -> List[Dict[str, Any]]:
+        """Fetch calendar events for the signed-in user (Calendars.Read)."""
+        if select_fields is None:
+            select_fields = [
+                "subject",
+                "start",
+                "end",
+                "organizer",
+                "location",
+                "isAllDay",
+            ]
+
+        params = {
+            "startDateTime": start_datetime,
+            "endDateTime": end_datetime,
+            "$select": ",".join(select_fields),
+            "$top": str(page_size),
+        }
+        url: Optional[str] = f"{GRAPH_BASE_URL}/me/calendarView"
+        events: List[Dict[str, Any]] = []
+        page_count = 0
+        first = True
+
+        while url:
+            response = requests.get(
+                url,
+                headers={
+                    **self._headers,
+                    "Prefer": 'outlook.timezone="UTC"',
+                },
+                params=params if first else None,
+                timeout=self._timeout,
+            )
+            first = False
+
+            if response.status_code != 200:
+                raise RuntimeError(
+                    f"Graph API error {response.status_code}: {response.text}"
+                )
+
+            data = response.json()
+            for event in data.get("value", []):
+                events.append(self._normalize_event(event))
+
+            url = data.get("@odata.nextLink")
+            page_count += 1
+            if max_pages and page_count >= max_pages:
+                break
+
+        return events
+
+    @staticmethod
+    def _normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
+        organizer = (
+            event.get("organizer", {})
+            .get("emailAddress", {})
+            .get("address")
+        )
+        location = event.get("location") or {}
+        return {
+            "subject": event.get("subject"),
+            "start": event.get("start"),
+            "end": event.get("end"),
+            "organizer": organizer,
+            "location": location.get("displayName"),
+            "is_all_day": event.get("isAllDay"),
+        }
 
     @staticmethod
     def _normalize_message(

@@ -29,13 +29,21 @@ def graph_redirect_uri() -> str:
     )
 
 
-def authorization_url(*, state: str, scopes: list[str]) -> str:
+def authorization_url(
+    *,
+    state: str,
+    scopes: list[str],
+    prompt: str | None = None,
+) -> str:
     app = build_msal_app()
-    return app.get_authorization_request_url(
-        scopes=scopes,
-        state=state,
-        redirect_uri=graph_redirect_uri(),
-    )
+    kwargs: dict = {
+        "scopes": scopes,
+        "state": state,
+        "redirect_uri": graph_redirect_uri(),
+    }
+    if prompt:
+        kwargs["prompt"] = prompt
+    return app.get_authorization_request_url(**kwargs)
 
 
 def exchange_auth_code(*, code: str, scopes: list[str]) -> dict:
