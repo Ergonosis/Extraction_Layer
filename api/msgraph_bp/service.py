@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import current_app, session
 
+from api.audit import audit
 from api.crypto import decrypt_token, encrypt_token
 from api.extensions import db
 from api.integrations.constants import MS_GRAPH_SCOPE_LABELS
@@ -124,6 +125,12 @@ def start_connect(
     integration.status = "connecting"
     integration.updated_at = _utcnow()
     db.session.commit()
+    audit(
+        "msgraph.connect.start",
+        user_id=user_id,
+        organization_id=organization_id,
+        scope_count=len(delegated),
+    )
 
     return {
         "authorize_url": url,
@@ -274,6 +281,13 @@ def complete_callback(*, code: str, state: str) -> dict:
     integration.updated_at = _utcnow()
     db.session.commit()
     db.session.refresh(integration)
+    audit(
+        "msgraph.connect.success",
+        user_id=user_id,
+        organization_id=organization_id,
+        incremental=incremental,
+        scope_count=len(granted),
+    )
 
     return {"integration": serialize_integration(integration)}
 
@@ -294,6 +308,11 @@ def disconnect(*, user_id: int, organization_id: int) -> dict:
     integration.connected_at = None
     integration.updated_at = _utcnow()
     db.session.commit()
+    audit(
+        "msgraph.disconnect",
+        user_id=user_id,
+        organization_id=organization_id,
+    )
 
     return {"integration": serialize_integration(integration)}
 
@@ -379,6 +398,12 @@ def update_permissions(
         integration.status = "connecting"
         integration.updated_at = _utcnow()
         db.session.commit()
+        audit(
+            "msgraph.permissions.consent_required",
+            user_id=user_id,
+            organization_id=organization_id,
+            scope_count=len(to_consent),
+        )
 
         return {
             "consent_required": True,
@@ -393,6 +418,12 @@ def update_permissions(
         integration.status = "connected"
     db.session.commit()
     db.session.refresh(integration)
+    audit(
+        "msgraph.permissions.updated",
+        user_id=user_id,
+        organization_id=organization_id,
+        scope_count=len(desired_active),
+    )
 
     return {
         "consent_required": False,
@@ -639,6 +670,14 @@ def run_export(
         logger.exception("Unexpected error during MS Graph export")
         raise MsGraphServiceError("Microsoft Graph export failed", status_code=502) from exc
 
+    audit(
+        "msgraph.export",
+        user_id=user_id,
+        organization_id=organization_id,
+        mail_count=len(messages),
+        calendar_count=len(events),
+        profile=bool(profile),
+    )
     return {
         "profile": profile,
         "mail_count": len(messages),
