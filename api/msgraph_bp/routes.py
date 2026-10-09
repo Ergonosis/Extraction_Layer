@@ -14,6 +14,7 @@ from api.msgraph_bp.service import (
     disconnect,
     list_available_permissions,
     portal_post_connect_url,
+    run_export,
     start_connect,
     update_permissions,
 )
@@ -153,6 +154,28 @@ def permissions_update():
             user_id=session["user_id"],
             organization_id=session["organization_id"],
             requested_scopes=body.get("scopes"),
+        )
+    except MsGraphServiceError as exc:
+        return _error_response(exc)
+    return jsonify(payload)
+
+
+@bp.post("/export")
+@mutation_limit
+@login_required
+def export_route():
+    """Pull profile/mail/calendar via legacy client; gated by DB permissions."""
+    body = request.get_json(silent=True) or {}
+    try:
+        payload = run_export(
+            user_id=session["user_id"],
+            organization_id=session["organization_id"],
+            include_profile=body.get("include_profile", True),
+            include_mail=body.get("include_mail", True),
+            include_calendar=body.get("include_calendar", True),
+            start_datetime=body.get("start_datetime"),
+            end_datetime=body.get("end_datetime"),
+            max_pages=body.get("max_pages", 1),
         )
     except MsGraphServiceError as exc:
         return _error_response(exc)

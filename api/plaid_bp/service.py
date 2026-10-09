@@ -1,11 +1,12 @@
-"""Plaid connect / exchange / disconnect / status business logic."""
+"""Plaid connect / exchange / disconnect / status / export business logic."""
 
 from __future__ import annotations
 
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
+from flask import current_app
 from plaid.exceptions import ApiException
 from plaid.model.country_code import CountryCode
 from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
@@ -21,6 +22,7 @@ from api.extensions import db
 from api.integrations.service import ensure_provider_rows, serialize_integration
 from api.models import Integration, PlaidCredential
 from api.plaid_bp.client import get_plaid_client
+from api.plaid_bp.extractor import load_fetch_and_store
 
 logger = logging.getLogger(__name__)
 
@@ -291,3 +293,92 @@ def check_status(*, user_id: int, organization_id: int) -> dict:
         db.session.commit()
 
     return {"integration": serialize_integration(integration)}
+
+
+def _parse_optional_date(value: object, field: str) -> date | None:
+    if value is None or value == "":
+        return None
+    if not isinstance(value, str):
+        raise PlaidServiceError(f"{field} must be an ISO date string (YYYY-MM-DD)")
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError as exc:
+        raise PlaidServiceError(
+            f"{field} must be an ISO date string (YYYY-MM-DD)"
+        ) from exc
+
+
+def run_export(
+    *,
+    user_id: int,
+    organization_id: int,
+    start_date: object = None,
+    end_date: object = None,
+    window_days: object = None,
+    account_filter: object = None,
+) -> dict:
+    """Decrypt Plaid token in-memory and call legacy ``fetch_and_store``.
+
+    Never returns or logs the access token.
+    """
+    integration = _plaid_integration(user_id=user_id, organization_id=organization_id)
+    cred = integration.plaid_credential
+    if cred is None or integration.status not in ("connected", "reauth_required"):
+        raise PlaidServiceError(
+            "Connect Plaid before exporting transactions",
+            status_code=400,
+        )
+
+    parsed_start = _parse_optional_date(start_date, "start_date")
+    parsed_end = _parse_optional_date(end_date, "end_date")
+
+    parsed_window: int | None = None
+    if window_days is not None and window_days != "":
+        try:
+            parsed_window = int(window_days)
+        except (TypeError, ValueError) as exc:
+            raise PlaidServiceError("window_days must be an integer") from exc
+        if parsed_window <= 0:
+            raise PlaidServiceError("window_days must be greater than 0")
+
+    output_dir = current_app.config.get("PLAID_RECORDS_DIR") or "records"
+
+    try:
+        client = get_plaid_client()
+        access_token = decrypt_token(cred.access_token_enc)
+        fetch_and_store = load_fetch_and_store()
+        file_path = fetch_and_store(
+            client,
+            access_token,
+            item_id=cred.item_id,
+            start_date=parsed_start,
+            end_date=parsed_end,
+            window_days=parsed_window,
+            account_filter=account_filter,
+            output_dir=output_dir,
+        )
+    except RuntimeError as exc:
+        raise PlaidServiceError(str(exc), status_code=503) from exc
+    except ValueError as exc:
+        raise PlaidServiceError(str(exc), status_code=400) from exc
+    except ApiException as exc:
+        code = _plaid_error_code(exc)
+        if code in _REAUTH_ERROR_CODES:
+            integration.status = "reauth_required"
+            integration.updated_at = _utcnow()
+            db.session.commit()
+            raise PlaidServiceError(
+                "Plaid re-authentication required",
+                status_code=401,
+            ) from exc
+        logger.exception("Plaid export failed (%s)", code)
+        raise PlaidServiceError("Plaid export failed", status_code=502) from exc
+    except Exception as exc:
+        logger.exception("Unexpected error during Plaid export")
+        raise PlaidServiceError("Plaid export failed", status_code=502) from exc
+
+    return {
+        "file": file_path,
+        "item_id": cred.item_id,
+        "integration": serialize_integration(integration),
+    }

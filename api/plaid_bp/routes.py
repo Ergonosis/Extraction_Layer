@@ -13,6 +13,7 @@ from api.plaid_bp.service import (
     create_link_token,
     disconnect,
     exchange_public_token,
+    run_export,
 )
 from api.rate_limit import (
     mutation_limit,
@@ -106,6 +107,26 @@ def status():
         payload = check_status(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
+        )
+    except PlaidServiceError as exc:
+        return _error_response(exc)
+    return jsonify(payload)
+
+
+@bp.post("/export")
+@mutation_limit
+@login_required
+def export_route():
+    """Pull transactions via legacy fetch_and_store; never returns tokens."""
+    body = request.get_json(silent=True) or {}
+    try:
+        payload = run_export(
+            user_id=session["user_id"],
+            organization_id=session["organization_id"],
+            start_date=body.get("start_date"),
+            end_date=body.get("end_date"),
+            window_days=body.get("window_days"),
+            account_filter=body.get("account_filter"),
         )
     except PlaidServiceError as exc:
         return _error_response(exc)
