@@ -10,6 +10,8 @@ import type { Integration } from '../api/integrations'
 type Props = {
   integration: Integration
   onUpdated: (next: Integration) => void
+  /** Scopes chosen in PermissionSelector for the initial Connect redirect. */
+  connectScopes?: string[]
 }
 
 function errorMessage(err: unknown, fallback: string): string {
@@ -27,7 +29,7 @@ function errorMessage(err: unknown, fallback: string): string {
   return fallback
 }
 
-export function MSGraphConnect({ integration, onUpdated }: Props) {
+export function MSGraphConnect({ integration, onUpdated, connectScopes }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -57,7 +59,11 @@ export function MSGraphConnect({ integration, onUpdated }: Props) {
         const { integration: cleared } = await msgraphDisconnect()
         onUpdated(cleared)
       }
-      const { authorize_url, integration: next } = await msgraphConnect()
+      const scopes =
+        mode === 'connect' && connectScopes && connectScopes.length > 0
+          ? connectScopes
+          : undefined
+      const { authorize_url, integration: next } = await msgraphConnect(scopes)
       onUpdated(next)
       window.location.assign(authorize_url)
     } catch (err) {

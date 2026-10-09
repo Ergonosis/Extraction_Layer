@@ -1,5 +1,7 @@
+import { useCallback, useState } from 'react'
 import type { Integration } from '../api/integrations'
 import { MSGraphConnect } from './MSGraphConnect'
+import { PermissionSelector } from './PermissionSelector'
 import { PlaidConnect } from './PlaidConnect'
 import './IntegrationCard.css'
 
@@ -26,6 +28,11 @@ export function IntegrationCard({
   const statusText = STATUS_LABELS[integration.status] || integration.status
   const isPlaid = integration.provider === 'plaid'
   const isMsGraph = integration.provider === 'msgraph'
+  const [connectScopes, setConnectScopes] = useState<string[] | undefined>(undefined)
+
+  const onSelectionChange = useCallback((scopes: string[]) => {
+    setConnectScopes(scopes)
+  }, [])
 
   return (
     <article className="integration-card">
@@ -48,24 +55,23 @@ export function IntegrationCard({
           </p>
         )}
 
-        {isMsGraph && integration.permissions.length > 0 && (
-          <ul className="integration-permissions">
-            {integration.permissions.map((perm) => (
-              <li key={perm.scope}>
-                <span>{perm.label}</span>
-                <span className={perm.is_active ? 'perm-on' : 'perm-off'}>
-                  {perm.is_active ? 'Active' : 'Off'}
-                </span>
-              </li>
-            ))}
-          </ul>
+        {isMsGraph && onMsGraphUpdated && (
+          <PermissionSelector
+            integration={integration}
+            onUpdated={onMsGraphUpdated}
+            onSelectionChange={onSelectionChange}
+          />
         )}
       </div>
 
       {isPlaid && onPlaidUpdated ? (
         <PlaidConnect integration={integration} onUpdated={onPlaidUpdated} />
       ) : isMsGraph && onMsGraphUpdated ? (
-        <MSGraphConnect integration={integration} onUpdated={onMsGraphUpdated} />
+        <MSGraphConnect
+          integration={integration}
+          onUpdated={onMsGraphUpdated}
+          connectScopes={connectScopes}
+        />
       ) : null}
     </article>
   )
