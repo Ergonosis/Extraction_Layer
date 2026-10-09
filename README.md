@@ -245,6 +245,10 @@ The React portal + Flask `api/` package use **shared-schema** tenancy (one Postg
 python scripts/verify_portal_tenancy.py
 ```
 
+## Deploy to GCP
+
+Production deploy scripts (Dockerfile, Cloud Build, Cloud Run migrate/deploy) are documented in **[docs/deploy-gcp.md](docs/deploy-gcp.md)**. The container serves the API and the built SPA on the same origin so session cookies work.
+
 ---
 
 ## Notes

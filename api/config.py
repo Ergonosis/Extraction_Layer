@@ -122,6 +122,10 @@ class Config:
         if origin.strip()
     ]
 
+    # Production Cloud Run image: directory of `portal/dist` for same-origin SPA.
+    # Empty / missing = API-only (local `flask run` + Vite on :5175).
+    PORTAL_STATIC_DIR = os.getenv("PORTAL_STATIC_DIR", "")
+
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

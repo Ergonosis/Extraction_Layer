@@ -1,6 +1,7 @@
 venv/
 .env
 portal/.env.local
+deploy/env.deploy.local
 __pycache__/
 plaid/records/
 portal/node_modules/
