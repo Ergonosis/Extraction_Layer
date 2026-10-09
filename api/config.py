@@ -63,7 +63,10 @@ class Config:
     # Authority uses /organizations so any work/school tenant can sign in.
     MS_CLIENT_ID = os.getenv("MS_CLIENT_ID", "")
     MS_CLIENT_SECRET = _load_secret("MS_CLIENT_SECRET", "")
-    MS_TENANT_ID = os.getenv("MS_TENANT_ID", "")  # optional legacy; not used for SSO authority
+    # Optional / legacy: single-tenant Graph app scripts may still read this.
+    # Portal SSO does NOT use MS_TENANT_ID as the login boundary — authority is
+    # /organizations below, with optional MS_TENANT_ALLOWLIST.
+    MS_TENANT_ID = os.getenv("MS_TENANT_ID", "")
     MS_AUTHORITY = os.getenv(
         "MS_AUTHORITY",
         "https://login.microsoftonline.com/organizations",

@@ -21,6 +21,51 @@ docker run -d --name extraction-portal-redis -p 6379:6379 redis:7-alpine
 
 `REDIS_URL` defaults to `redis://localhost:6379/0`. Flask-Session and flask-limiter both use this Redis. Production should point `REDIS_URL` at Memorystore (or equivalent), not a laptop container.
 
+**Scale note:** multiple Cloud Run instances require shared Redis sessions. Without Redis, sticky sessions alone will not keep logins consistent across instances.
+
+## Multi-organization tenancy (issue #30)
+
+The portal uses **shared-schema** tenancy: one Cloud SQL / Postgres database, every tenant row tagged with `organization_id`. There is no database-per-customer.
+
+### Mapping
+
+| Concept | Storage |
+|---|---|
+| Microsoft Entra tenant (`tid` claim) | `organizations.ms_tenant_id` (unique) |
+| Signed-in person (`oid` claim) | `users` row scoped by `(organization_id, ms_oid)` |
+| Plaid / MS Graph connection | `integrations` row per `(user_id, provider)`, also stamped with `organization_id` |
+
+SSO (`complete_sso_login`) finds or creates the org from `tid`, then finds or creates the user in that org. The session stores only `user_id` and `organization_id`. Portal SSO authority is `https://login.microsoftonline.com/organizations` — **not** a single `MS_TENANT_ID`. Optional `MS_TENANT_ALLOWLIST` restricts which Entra tenants may sign in.
+
+### Isolation rules
+
+- `login_required` rejects sessions whose `organization_id` does not match the user row.
+- Integrations / Plaid / MS Graph services load rows with **both** `user_id` and `organization_id`.
+- `ensure_provider_rows` calls `require_matching_org` so a mismatched id pair fails closed (HTTP 403).
+- Plaid and Graph tokens stay **per-user inside an org** (delegated consent). They are not shared org-wide.
+- Out of scope for #30: org admin UI, invites, roles, DB-per-tenant.
+
+### GCP cost tiers (planning)
+
+Rough monthly GCP cost for the portal stack (Cloud Run + Cloud SQL + Redis/Memorystore). **Plaid usage is billed separately.**
+
+| Tier | Approx. GCP / month | Shape |
+|---|---|---|
+| Small | ~$40–90 | Single Cloud Run service, small Cloud SQL, Redis/Memorystore |
+| Medium | ~$150–400 | Multi-instance Cloud Run, larger SQL, Memorystore |
+| Large | ~$500–2,000 | HA Cloud SQL, more Redis capacity, autoscaling |
+
+Production checklist for multi-instance scale:
+
+- [ ] `REDIS_URL` points at Memorystore (shared sessions + rate limits)
+- [ ] `DATABASE_URL` points at Cloud SQL (shared schema; org isolation in queries)
+- [ ] Secrets via Secret Manager (`USE_GCP_SECRETS=true`)
+- [ ] `MS_TENANT_ALLOWLIST` set if you must restrict which companies can sign in
+
+```bash
+python scripts/verify_portal_tenancy.py
+```
+
 ## CSRF
 
 Mutating requests (`POST` / `PUT` / `DELETE` / `PATCH`) must send header `X-CSRF-Token` matching the token from `GET /api/auth/csrf-token` (stored in the server session). Missing/invalid token returns `403`.

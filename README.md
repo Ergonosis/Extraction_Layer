@@ -237,6 +237,16 @@ Each email is returned as a dictionary:
 
 ---
 
+## Portal multi-organization tenancy
+
+The React portal + Flask `api/` package use **shared-schema** tenancy (one Postgres / Cloud SQL database; every row tagged with `organization_id`). Microsoft Entra `tid` maps to an `organizations` row; Plaid and Graph connections stay per-user inside that org. See **SECURITY.md → Multi-organization tenancy** for isolation rules, Redis multi-instance notes, and GCP cost tiers. Verify with:
+
+```bash
+python scripts/verify_portal_tenancy.py
+```
+
+---
+
 ## Notes
 
 - Use `PLAID_ENV=sandbox` for local development and testing; switch to `development` or `production` with matching credentials for live data.
