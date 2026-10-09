@@ -76,6 +76,12 @@ def _assert_production_secrets(app: Flask) -> None:
 def _register_error_handlers(app: Flask) -> None:
     """Return JSON errors without stack traces, paths, SQL, or key material."""
 
+    from api.tenancy import TenancyError
+
+    @app.errorhandler(TenancyError)
+    def _tenancy_error(exc: TenancyError):
+        return jsonify({"error": "Forbidden", "detail": exc.detail}), 403
+
     @app.errorhandler(HTTPException)
     def _http_error(exc: HTTPException):
         return jsonify({"error": exc.name, "detail": exc.description}), exc.code

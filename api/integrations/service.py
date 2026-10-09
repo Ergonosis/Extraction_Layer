@@ -9,6 +9,7 @@ from api.integrations.constants import (
     SUPPORTED_PROVIDERS,
 )
 from api.models import Integration
+from api.tenancy import require_matching_org
 
 
 def _iso(dt) -> str | None:
@@ -35,6 +36,7 @@ def _msgraph_permissions_payload(integration: Integration) -> list[dict]:
 
 def ensure_provider_rows(*, user_id: int, organization_id: int) -> list[Integration]:
     """Ensure plaid + msgraph rows exist for this user/org; return both ordered."""
+    require_matching_org(user_id=user_id, organization_id=organization_id)
     existing = {
         row.provider: row
         for row in Integration.query.filter_by(
