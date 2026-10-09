@@ -1,13 +1,20 @@
 import { useCallback, useEffect, useState } from 'react'
-import { isAxiosError } from 'axios'
+import { userFacingApiError } from '../api/errors'
 import { fetchIntegrations, type Integration } from '../api/integrations'
 import { msgraphStatus } from '../api/msgraph'
 import { plaidStatus } from '../api/plaid'
 import { IntegrationCard } from '../components/IntegrationCard'
+import { useToast } from '../context/ToastContext'
 import './ConnectionsPage.css'
 
+function shouldHealthCheck(status: string): boolean {
+  return status === 'connected' || status === 'reauth_required'
+}
+
 export function ConnectionsPage() {
+  const { pushToast } = useToast()
   const [integrations, setIntegrations] = useState<Integration[] | null>(null)
+  const [healthChecking, setHealthChecking] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const upsertIntegration = useCallback((next: Integration) => {
@@ -31,42 +38,66 @@ export function ConnectionsPage() {
         setError(null)
 
         const plaid = rows.find((row) => row.provider === 'plaid')
-        if (plaid?.status === 'connected') {
-          try {
-            const { integration } = await plaidStatus()
-            if (!cancelled) upsertIntegration(integration)
-          } catch {
-            // Status check is best-effort.
-          }
+        const msgraph = rows.find((row) => row.provider === 'msgraph')
+        const checks: Promise<void>[] = []
+
+        if (plaid && shouldHealthCheck(plaid.status)) {
+          checks.push(
+            (async () => {
+              try {
+                const { integration } = await plaidStatus()
+                if (!cancelled) upsertIntegration(integration)
+              } catch (err) {
+                if (!cancelled) {
+                  pushToast({
+                    kind: 'error',
+                    message: userFacingApiError(err, 'Could not check Plaid connection health.'),
+                  })
+                }
+              }
+            })(),
+          )
         }
 
-        const msgraph = rows.find((row) => row.provider === 'msgraph')
-        if (msgraph?.status === 'connected') {
-          try {
-            const { integration } = await msgraphStatus()
-            if (!cancelled) upsertIntegration(integration)
-          } catch {
-            // Status check is best-effort.
-          }
+        if (msgraph && shouldHealthCheck(msgraph.status)) {
+          checks.push(
+            (async () => {
+              try {
+                const { integration } = await msgraphStatus()
+                if (!cancelled) upsertIntegration(integration)
+              } catch (err) {
+                if (!cancelled) {
+                  pushToast({
+                    kind: 'error',
+                    message: userFacingApiError(
+                      err,
+                      'Could not check Microsoft Graph connection health.',
+                    ),
+                  })
+                }
+              }
+            })(),
+          )
+        }
+
+        if (checks.length > 0) {
+          setHealthChecking(true)
+          await Promise.all(checks)
+          if (!cancelled) setHealthChecking(false)
         }
       } catch (err) {
         if (cancelled) return
         setIntegrations([])
-        if (isAxiosError(err) && err.response?.status === 401) {
-          setError(
-            'Not signed in. Use “Continue as local dev user” on /login (ENABLE_DEV_LOGIN).',
-          )
-        } else if (isAxiosError(err) && !err.response) {
-          setError('Could not reach the API. Is Flask running on :5000?')
-        } else {
-          setError('Could not load integrations.')
-        }
+        setHealthChecking(false)
+        const message = userFacingApiError(err, 'Could not load integrations.')
+        setError(message)
+        pushToast({ kind: 'error', message })
       }
     })()
     return () => {
       cancelled = true
     }
-  }, [upsertIntegration])
+  }, [pushToast, upsertIntegration])
 
   return (
     <div className="connections-page">
@@ -80,6 +111,12 @@ export function ConnectionsPage() {
       {integrations === null && !error && (
         <p className="connections-loading" role="status">
           Loading integrations…
+        </p>
+      )}
+
+      {integrations !== null && healthChecking && (
+        <p className="connections-loading" role="status">
+          Checking connection health…
         </p>
       )}
 

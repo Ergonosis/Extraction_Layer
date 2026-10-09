@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { isAxiosError } from 'axios'
 import { usePlaidLink, type PlaidLinkOnSuccess } from 'react-plaid-link'
+import { userFacingApiError } from '../api/errors'
 import {
   plaidCancel,
   plaidConnect,
@@ -8,25 +9,12 @@ import {
   plaidExchange,
 } from '../api/plaid'
 import type { Integration } from '../api/integrations'
+import { useToast } from '../context/ToastContext'
+import { ConfirmDialog } from './ConfirmDialog'
 
 type Props = {
   integration: Integration
   onUpdated: (next: Integration) => void
-}
-
-function errorMessage(err: unknown, fallback: string): string {
-  if (isAxiosError(err)) {
-    const apiError = err.response?.data?.error
-    if (typeof apiError === 'string' && apiError) return apiError
-    if (!err.response) return 'Could not reach the API. Is Flask running on :5000?'
-    if (err.response.status === 404) {
-      return 'Plaid API route missing. Restart Flask on this branch.'
-    }
-    if (err.response.status === 503) {
-      return 'Plaid is not configured. Set PLAID_CLIENT_ID, PLAID_SECRET, and FERNET_KEY in .env, then restart Flask.'
-    }
-  }
-  return fallback
 }
 
 /**
@@ -71,9 +59,10 @@ function PlaidLinkControls({
 }
 
 export function PlaidConnect({ integration, onUpdated }: Props) {
+  const { pushToast } = useToast()
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const exchangeSucceededRef = useRef(false)
   const clearedStuckRef = useRef(false)
 
@@ -81,6 +70,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
   const needsReauth = integration.status === 'reauth_required'
   const isConnecting = integration.status === 'connecting'
   const awaitingLink = Boolean(linkToken)
+  const canDisconnect = isConnected || needsReauth
 
   const clearLocalLink = useCallback(() => {
     setLinkToken(null)
@@ -128,10 +118,12 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
     async (publicToken) => {
       exchangeSucceededRef.current = true
       setBusy(true)
-      setError(null)
       try {
         if (!publicToken) {
-          setError('Plaid did not return a public token.')
+          pushToast({
+            kind: 'error',
+            message: 'Plaid did not return a public token.',
+          })
           exchangeSucceededRef.current = false
           await resetToNotConnected()
           return
@@ -139,15 +131,19 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
         const { integration: next } = await plaidExchange(publicToken)
         onUpdated(next)
         clearLocalLink()
+        pushToast({ kind: 'success', message: 'Plaid connected.' })
       } catch (err) {
         exchangeSucceededRef.current = false
-        setError(errorMessage(err, 'Could not finish Plaid connection.'))
+        pushToast({
+          kind: 'error',
+          message: userFacingApiError(err, 'Could not finish Plaid connection.'),
+        })
         await resetToNotConnected()
       } finally {
         setBusy(false)
       }
     },
-    [clearLocalLink, onUpdated, resetToNotConnected],
+    [clearLocalLink, onUpdated, pushToast, resetToNotConnected],
   )
 
   const onLinkExit = useCallback(() => {
@@ -161,7 +157,6 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
 
   const beginLink = async (mode: 'connect' | 'reconnect') => {
     setBusy(true)
-    setError(null)
     exchangeSucceededRef.current = false
     clearedStuckRef.current = true
     setLinkToken(null)
@@ -175,40 +170,43 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
       setLinkToken(link_token)
       setBusy(false)
     } catch (err) {
-      setError(
-        errorMessage(
+      pushToast({
+        kind: 'error',
+        message: userFacingApiError(
           err,
           mode === 'reconnect' ? 'Could not reconnect Plaid.' : 'Could not start Plaid Link.',
         ),
-      )
+      })
       setBusy(false)
       await resetToNotConnected()
     }
   }
 
-  const onDisconnect = async () => {
+  const onDisconnectConfirmed = async () => {
     setBusy(true)
-    setError(null)
     clearLocalLink()
     try {
       const { integration: next } = await plaidDisconnect()
       onUpdated(next)
+      setConfirmOpen(false)
+      pushToast({ kind: 'success', message: 'Plaid disconnected.' })
     } catch (err) {
-      setError(errorMessage(err, 'Could not disconnect Plaid.'))
+      pushToast({
+        kind: 'error',
+        message: userFacingApiError(err, 'Could not disconnect Plaid.'),
+      })
     } finally {
       setBusy(false)
     }
   }
 
   const onCancel = () => {
-    setError(null)
     void resetToNotConnected()
   }
 
   return (
     <div className="plaid-connect">
       <div className="integration-card-actions">
-        {/* Step 1: mint link_token */}
         {!awaitingLink && !isConnected && !needsReauth && (
           <button
             type="button"
@@ -230,27 +228,26 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           </button>
         )}
         {!awaitingLink && isConnected && (
-          <>
-            <button
-              type="button"
-              className="btn-secondary"
-              disabled={busy}
-              onClick={() => void beginLink('reconnect')}
-            >
-              {busy ? 'Working…' : 'Reconnect'}
-            </button>
-            <button
-              type="button"
-              className="btn-danger"
-              disabled={busy}
-              onClick={() => void onDisconnect()}
-            >
-              Disconnect
-            </button>
-          </>
+          <button
+            type="button"
+            className="btn-secondary"
+            disabled={busy}
+            onClick={() => void beginLink('reconnect')}
+          >
+            {busy ? 'Working…' : 'Reconnect'}
+          </button>
+        )}
+        {!awaitingLink && canDisconnect && (
+          <button
+            type="button"
+            className="btn-danger"
+            disabled={busy}
+            onClick={() => setConfirmOpen(true)}
+          >
+            Disconnect
+          </button>
         )}
 
-        {/* Step 2: open Link from a real click once the handler is ready */}
         {linkToken && (
           <PlaidLinkControls
             key={linkToken}
@@ -261,7 +258,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           />
         )}
 
-        {(awaitingLink || (isConnecting && !isConnected)) && (
+        {(awaitingLink || (isConnecting && !isConnected && !needsReauth)) && (
           <button
             type="button"
             className="btn-secondary"
@@ -272,7 +269,18 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           </button>
         )}
       </div>
-      {error && <p className="plaid-connect-error">{error}</p>}
+
+      <ConfirmDialog
+        open={confirmOpen}
+        title="Disconnect Plaid?"
+        message="This removes the stored bank link for your organization. You can connect again later."
+        confirmLabel="Disconnect"
+        busy={busy}
+        onCancel={() => {
+          if (!busy) setConfirmOpen(false)
+        }}
+        onConfirm={() => void onDisconnectConfirmed()}
+      />
     </div>
   )
 }
