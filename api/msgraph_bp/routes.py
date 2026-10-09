@@ -12,11 +12,14 @@ from api.msgraph_bp.service import (
     check_status,
     complete_callback,
     disconnect,
+    list_available_permissions,
     portal_post_connect_url,
     start_connect,
+    update_permissions,
 )
 from api.rate_limit import (
     auth_callback_limit,
+    auth_me_limit,
     msgraph_status_limit,
     mutation_limit,
     strict_mutation_limit,
@@ -118,6 +121,38 @@ def status():
         payload = check_status(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
+        )
+    except MsGraphServiceError as exc:
+        return _error_response(exc)
+    return jsonify(payload)
+
+
+@bp.get("/permissions/available")
+@auth_me_limit
+@login_required
+def permissions_available():
+    """Allowlist permissions with labels and current is_active flags."""
+    try:
+        payload = list_available_permissions(
+            user_id=session["user_id"],
+            organization_id=session["organization_id"],
+        )
+    except MsGraphServiceError as exc:
+        return _error_response(exc)
+    return jsonify(payload)
+
+
+@bp.put("/permissions")
+@mutation_limit
+@login_required
+def permissions_update():
+    """Toggle active scopes or return incremental consent redirect_url."""
+    body = request.get_json(silent=True) or {}
+    try:
+        payload = update_permissions(
+            user_id=session["user_id"],
+            organization_id=session["organization_id"],
+            requested_scopes=body.get("scopes"),
         )
     except MsGraphServiceError as exc:
         return _error_response(exc)

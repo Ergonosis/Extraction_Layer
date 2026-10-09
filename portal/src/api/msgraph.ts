@@ -34,3 +34,37 @@ export async function msgraphStatus(): Promise<MsGraphIntegrationResponse> {
   const { data } = await api.get<MsGraphIntegrationResponse>('/api/msgraph/status')
   return data
 }
+
+export type MsGraphAvailablePermission = {
+  scope: string
+  label: string
+  is_active: boolean
+}
+
+export type MsGraphAvailableResponse = {
+  permissions: MsGraphAvailablePermission[]
+  connected: boolean
+}
+
+export type MsGraphPermissionsUpdateResponse = {
+  consent_required: boolean
+  redirect_url?: string
+  integration: Integration
+}
+
+export async function msgraphPermissionsAvailable(): Promise<MsGraphAvailableResponse> {
+  const { data } = await api.get<MsGraphAvailableResponse>(
+    '/api/msgraph/permissions/available',
+  )
+  return data
+}
+
+export async function msgraphUpdatePermissions(
+  scopes: string[],
+): Promise<MsGraphPermissionsUpdateResponse> {
+  const { data } = await api.put<MsGraphPermissionsUpdateResponse>(
+    '/api/msgraph/permissions',
+    { scopes },
+  )
+  return data
+}

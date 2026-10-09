@@ -104,6 +104,15 @@ python scripts/verify_portal_plaid.py
 python scripts/verify_portal_msgraph.py
 ```
 
+### Permission selector (issue #26)
+
+- `GET /permissions/available` (30/min): allowlist + `is_active` flags.
+- `PUT /permissions` (10/min, CSRF): toggle `is_active` for already-granted scopes; if new scopes are needed, returns `consent_required` + `redirect_url` for incremental consent.
+
+```bash
+python scripts/verify_portal_msgraph_permissions.py
+```
+
 ## LOCAL ONLY — auth bypass (never in production)
 
 One development escape lets you use the portal without Microsoft SSO:

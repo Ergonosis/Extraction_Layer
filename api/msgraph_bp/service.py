@@ -19,6 +19,8 @@ logger = logging.getLogger(__name__)
 
 SESSION_STATE_KEY = "msgraph_oauth_state"
 SESSION_SCOPES_KEY = "msgraph_requested_scopes"
+SESSION_DESIRED_ACTIVE_KEY = "msgraph_desired_active"
+SESSION_INCREMENTAL_KEY = "msgraph_incremental"
 
 # Always request offline_access so we receive a refresh token.
 OFFLINE_ACCESS = "offline_access"
@@ -49,11 +51,11 @@ def _msgraph_integration(*, user_id: int, organization_id: int) -> Integration:
     raise MsGraphServiceError("MS Graph integration row missing", status_code=500)
 
 
-def validate_requested_scopes(requested: object) -> list[str]:
-    """Validate against hardcoded allowlist; default to full allowlist if empty."""
+def _parse_scope_list(requested: object) -> list[str]:
+    """Parse and allowlist-check scopes; may return empty."""
     allow = _allowlist()
-    if requested is None or requested == [] or requested == "":
-        return sorted(allow)
+    if requested is None:
+        return []
 
     if isinstance(requested, str):
         items = [s.strip() for s in requested.split() if s.strip()]
@@ -62,7 +64,6 @@ def validate_requested_scopes(requested: object) -> list[str]:
     else:
         raise MsGraphServiceError("scopes must be a list of strings", status_code=400)
 
-    # offline_access is added by us; strip if client sent it
     items = [s for s in items if s != OFFLINE_ACCESS]
     unsupported = [s for s in items if s not in allow]
     if unsupported:
@@ -70,10 +71,24 @@ def validate_requested_scopes(requested: object) -> list[str]:
             f"Unsupported scopes: {', '.join(unsupported)}",
             status_code=400,
         )
+    return [s for s in MS_GRAPH_SCOPE_LABELS if s in set(items)]
+
+
+def validate_requested_scopes(requested: object) -> list[str]:
+    """Validate against hardcoded allowlist; default to full allowlist if empty."""
+    if requested is None or requested == [] or requested == "":
+        return [s for s in MS_GRAPH_SCOPE_LABELS]
+    items = _parse_scope_list(requested)
     if not items:
         raise MsGraphServiceError("At least one allowlisted scope is required", status_code=400)
-    # Preserve stable order from allowlist definition
-    return [s for s in MS_GRAPH_SCOPE_LABELS if s in set(items)]
+    return items
+
+
+def validate_permission_scopes(requested: object) -> list[str]:
+    """Validate allowlist scopes for PUT permissions (empty = deactivate all)."""
+    if requested is None:
+        raise MsGraphServiceError("scopes is required", status_code=400)
+    return _parse_scope_list(requested)
 
 
 def _scopes_for_msal(delegated: list[str]) -> list[str]:
@@ -102,6 +117,8 @@ def start_connect(
     session.permanent = True
     session[SESSION_STATE_KEY] = state
     session[SESSION_SCOPES_KEY] = delegated
+    session.pop(SESSION_DESIRED_ACTIVE_KEY, None)
+    session.pop(SESSION_INCREMENTAL_KEY, None)
 
     integration.status = "connecting"
     integration.updated_at = _utcnow()
@@ -159,7 +176,9 @@ def _account_from_result(result: dict) -> str | None:
 def complete_callback(*, code: str, state: str) -> dict:
     """Exchange code, encrypt tokens, upsert credentials + permissions."""
     expected = session.pop(SESSION_STATE_KEY, None)
-    requested = session.pop(SESSION_SCOPES_KEY, None) or sorted(_allowlist())
+    requested = session.pop(SESSION_SCOPES_KEY, None) or [s for s in MS_GRAPH_SCOPE_LABELS]
+    desired_active = session.pop(SESSION_DESIRED_ACTIVE_KEY, None)
+    incremental = bool(session.pop(SESSION_INCREMENTAL_KEY, False))
 
     if not expected or not state or not secrets.compare_digest(str(state), str(expected)):
         raise MsGraphServiceError("Invalid OAuth state", status_code=400)
@@ -190,7 +209,18 @@ def complete_callback(*, code: str, state: str) -> dict:
 
     access_token = result["access_token"]
     refresh_token = result.get("refresh_token")
-    if not refresh_token:
+
+    cred = integration.ms_graph_credential
+    previous = list(cred.scopes_granted or []) if cred is not None else []
+
+    # Encrypt immediately — plaintext must never hit the DB.
+    access_enc = encrypt_token(access_token)
+    if refresh_token:
+        refresh_enc = encrypt_token(refresh_token)
+    elif incremental and cred is not None and cred.refresh_token_enc:
+        # Incremental consent may omit a new refresh_token — keep the existing blob.
+        refresh_enc = cred.refresh_token_enc
+    else:
         integration.status = "error"
         integration.updated_at = _utcnow()
         db.session.commit()
@@ -199,21 +229,24 @@ def complete_callback(*, code: str, state: str) -> dict:
             status_code=502,
         )
 
-    # Encrypt immediately — plaintext must never hit the DB.
-    access_enc = encrypt_token(access_token)
-    refresh_enc = encrypt_token(refresh_token)
     expiry = _parse_expiry(result)
 
     raw_scopes = result.get("scope") or ""
-    granted = [
+    from_token = [
         s
         for s in str(raw_scopes).split()
         if s in _allowlist()
     ]
-    if not granted:
-        granted = list(requested)
 
-    cred = integration.ms_graph_credential
+    if incremental:
+        granted = [
+            s
+            for s in MS_GRAPH_SCOPE_LABELS
+            if s in set(previous) | set(from_token) | set(requested)
+        ]
+    else:
+        granted = from_token or list(requested)
+
     if cred is None:
         cred = MsGraphCredential(integration_id=integration.id)
         db.session.add(cred)
@@ -223,12 +256,20 @@ def complete_callback(*, code: str, state: str) -> dict:
     cred.token_expiry = expiry
     cred.scopes_granted = granted
 
-    _upsert_permissions(integration, granted)
+    # Desired active set: explicit from incremental PUT, else all granted.
+    active = (
+        [s for s in MS_GRAPH_SCOPE_LABELS if s in set(desired_active or [])]
+        if desired_active is not None
+        else granted
+    )
+    _upsert_permissions(integration, active)
 
     account = _account_from_result(result)
     integration.status = "connected"
-    integration.connected_account = account
-    integration.connected_at = _utcnow()
+    if account:
+        integration.connected_account = account
+    if integration.connected_at is None:
+        integration.connected_at = _utcnow()
     integration.updated_at = _utcnow()
     db.session.commit()
     db.session.refresh(integration)
@@ -257,20 +298,105 @@ def disconnect(*, user_id: int, organization_id: int) -> dict:
 
 
 def cancel_connect(*, user_id: int, organization_id: int) -> dict:
-    """Abandon connecting when no credential exists."""
+    """Abandon connecting / incremental consent."""
     integration = _msgraph_integration(user_id=user_id, organization_id=organization_id)
     session.pop(SESSION_STATE_KEY, None)
     session.pop(SESSION_SCOPES_KEY, None)
-
-    if integration.ms_graph_credential is not None:
-        return {"integration": serialize_integration(integration)}
+    session.pop(SESSION_DESIRED_ACTIVE_KEY, None)
+    session.pop(SESSION_INCREMENTAL_KEY, None)
 
     if integration.status == "connecting":
-        integration.status = "not_connected"
+        # Incremental consent leaves credentials in place — restore connected.
+        if integration.ms_graph_credential is not None:
+            integration.status = "connected"
+        else:
+            integration.status = "not_connected"
         integration.updated_at = _utcnow()
         db.session.commit()
 
     return {"integration": serialize_integration(integration)}
+
+
+def list_available_permissions(*, user_id: int, organization_id: int) -> dict:
+    """Allowlist catalog with is_active merged from the user's permission rows."""
+    integration = _msgraph_integration(user_id=user_id, organization_id=organization_id)
+    by_scope = {p.scope: p for p in (integration.ms_graph_permissions or [])}
+    permissions = []
+    for scope, label in MS_GRAPH_SCOPE_LABELS.items():
+        row = by_scope.get(scope)
+        permissions.append(
+            {
+                "scope": scope,
+                "label": label,
+                "is_active": bool(row.is_active) if row else False,
+            }
+        )
+    return {
+        "permissions": permissions,
+        "connected": integration.status == "connected"
+        and integration.ms_graph_credential is not None,
+    }
+
+
+def update_permissions(
+    *,
+    user_id: int,
+    organization_id: int,
+    requested_scopes: object,
+) -> dict:
+    """Toggle is_active for granted scopes, or start incremental consent for new ones."""
+    desired_active = validate_permission_scopes(requested_scopes)
+    integration = _msgraph_integration(user_id=user_id, organization_id=organization_id)
+    cred = integration.ms_graph_credential
+
+    if cred is None or integration.status not in ("connected", "reauth_required", "connecting"):
+        raise MsGraphServiceError(
+            "Connect Microsoft Graph before updating permissions",
+            status_code=400,
+        )
+
+    granted = set(cred.scopes_granted or [])
+    to_consent = [s for s in desired_active if s not in granted]
+
+    if to_consent:
+        try:
+            state = secrets.token_urlsafe(32)
+            url = msal_graph.authorization_url(
+                state=state,
+                scopes=_scopes_for_msal(to_consent),
+                prompt="consent",
+            )
+        except RuntimeError as exc:
+            raise MsGraphServiceError(str(exc), status_code=503) from exc
+
+        session.permanent = True
+        session[SESSION_STATE_KEY] = state
+        session[SESSION_SCOPES_KEY] = to_consent
+        session[SESSION_DESIRED_ACTIVE_KEY] = desired_active
+        session[SESSION_INCREMENTAL_KEY] = True
+
+        integration.status = "connecting"
+        integration.updated_at = _utcnow()
+        db.session.commit()
+
+        return {
+            "consent_required": True,
+            "redirect_url": url,
+            "integration": serialize_integration(integration),
+        }
+
+    # All desired scopes already granted (or only removals) — local toggle only.
+    _upsert_permissions(integration, desired_active)
+    integration.updated_at = _utcnow()
+    if integration.status == "connecting":
+        integration.status = "connected"
+    db.session.commit()
+    db.session.refresh(integration)
+
+    return {
+        "consent_required": False,
+        "integration": serialize_integration(integration),
+    }
 
 
 def check_status(*, user_id: int, organization_id: int) -> dict:
