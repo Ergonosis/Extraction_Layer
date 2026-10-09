@@ -1,45 +1,69 @@
 import os, json
 from datetime import date
+
 from flask import Flask, request, jsonify, render_template_string
 from dotenv import load_dotenv
+
+from plaid.model.country_code import CountryCode
+from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
+from plaid.model.item_get_request import ItemGetRequest
+from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
+from plaid.model.link_token_create_request import LinkTokenCreateRequest
+from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.products import Products
+
+from extractors.matching import matches_any
 from extractors.plaid_ext import PlaidExtractor, fetch_and_store
+from paths import get_records_dir
 
 load_dotenv()
 app = Flask(__name__)
 
 plaid_engine = PlaidExtractor(os.getenv("PLAID_CLIENT_ID"), os.getenv("PLAID_SECRET"), os.getenv("PLAID_ENV"))
 
+_INDEX_HTML = None
+_index_path = os.path.join(os.path.dirname(__file__), "index.html")
+if os.path.exists(_index_path):
+    with open(_index_path, encoding="utf-8") as f:
+        _INDEX_HTML = f.read()
+
 # --- Helper Functions ---
 
-def get_records_dir():
-    return os.getenv("RECORDS_DIR", "records")
+TOKENS_FILE = "tokens.json"
+ITEMS_FILE = "items.json"
+
+def _load_json(filename):
+    path = os.path.join(get_records_dir(), filename)
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r") as f:
+        return json.load(f)
+
+def _save_json(filename, data):
+    os.makedirs(get_records_dir(), exist_ok=True)
+    path = os.path.join(get_records_dir(), filename)
+    with open(path, "w") as f:
+        json.dump(data, f)
 
 def load_tokens():
-    path = os.path.join(get_records_dir(), "tokens.json")
-    return json.load(open(path, "r")) if os.path.exists(path) else {}
+    return _load_json(TOKENS_FILE)
 
 def load_item_metadata():
-    path = os.path.join(get_records_dir(), "items.json")
-    return json.load(open(path, "r")) if os.path.exists(path) else {}
+    return _load_json(ITEMS_FILE)
 
 def save_token(item_id, access_token):
-    records_dir = get_records_dir()
-    os.makedirs(records_dir, exist_ok=True)
-    path = os.path.join(records_dir, "tokens.json")
     tokens = load_tokens()
     tokens[item_id] = access_token
-    with open(path, 'w') as f: json.dump(tokens, f)
+    _save_json(TOKENS_FILE, tokens)
 
 def save_item_metadata(item_id, institution_id, institution_name):
-    records_dir = get_records_dir()
-    path = os.path.join(records_dir, "items.json")
     items = load_item_metadata()
     items[item_id] = {
         "item_id": item_id,
         "institution_id": institution_id,
         "institution_name": institution_name,
     }
-    with open(path, "w") as f: json.dump(items, f)
+    _save_json(ITEMS_FILE, items)
 
 # --- The Core Method Call Class ---
 
@@ -58,12 +82,16 @@ class DataExporter:
 
         selected_item_ids = []
         if bank_filter:
-            needles = [n.lower() for n in (bank_filter if isinstance(bank_filter, list) else [bank_filter])]
-            for item_id in tokens.keys():
-                meta = metadata.get(item_id, {})
-                haystack = f"{meta.get('institution_name', '')} {meta.get('institution_id', '')} {item_id}".lower()
-                if any(needle in haystack for needle in needles):
-                    selected_item_ids.append(item_id)
+            selected_item_ids = [
+                item_id
+                for item_id in tokens
+                if matches_any(
+                    bank_filter,
+                    metadata.get(item_id, {}).get("institution_name", ""),
+                    metadata.get(item_id, {}).get("institution_id", ""),
+                    item_id,
+                )
+            ]
         else:
             selected_item_ids = list(tokens.keys())
 
@@ -85,17 +113,13 @@ class DataExporter:
 
 @app.route('/')
 def index():
-    if os.path.exists('index.html'):
-        return render_template_string(open('index.html').read())
-    return "Plaid connect page missing.", 404
+    if _INDEX_HTML is None:
+        return "Plaid connect page missing.", 404
+    return render_template_string(_INDEX_HTML)
 
 
 @app.route('/api/create_link_token', methods=['POST'])
 def link_token():
-    from plaid.model.link_token_create_request import LinkTokenCreateRequest
-    from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
-    from plaid.model.products import Products
-    from plaid.model.country_code import CountryCode
     req = LinkTokenCreateRequest(
         products=[Products('transactions')],
         client_name="Data Aggregator",
@@ -107,11 +131,6 @@ def link_token():
 
 @app.route('/api/exchange_public_token', methods=['POST'])
 def exchange():
-    from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
-    from plaid.model.item_get_request import ItemGetRequest
-    from plaid.model.institutions_get_by_id_request import InstitutionsGetByIdRequest
-    from plaid.model.country_code import CountryCode
-
     pub_token = request.json.get('public_token')
     exchange_resp = plaid_engine.client.item_public_token_exchange(ItemPublicTokenExchangeRequest(public_token=pub_token))
     access_token, item_id = exchange_resp['access_token'], exchange_resp["item_id"]
