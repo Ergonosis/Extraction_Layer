@@ -4,5 +4,6 @@ portal/.env.local
 deploy/env.deploy.local
 __pycache__/
 plaid/records/
+records/
 portal/node_modules/
 portal/dist/
