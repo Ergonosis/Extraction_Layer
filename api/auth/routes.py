@@ -11,7 +11,11 @@ from api.auth import msal_client
 from api.auth.decorators import login_required
 from api.auth.dev_login import is_dev_login_allowed, upsert_dev_identity
 from api.auth.service import AuthError, complete_sso_login
-from api.auth.session_utils import regenerate_session, safe_post_login_url
+from api.auth.session_utils import (
+    destroy_session,
+    regenerate_session,
+    safe_post_login_url,
+)
 from api.extensions import db
 from api.middleware import ensure_csrf_token
 from api.models import User
@@ -152,8 +156,7 @@ def me():
 @login_required
 def logout():
     """Destroy the portal session (does not revoke Microsoft SSO)."""
-    session.clear()
-    session.modified = True
+    destroy_session()
     return jsonify({"status": "logged_out"})
 
 

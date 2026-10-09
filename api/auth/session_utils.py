@@ -1,4 +1,4 @@
-"""Session helpers (fixation prevention, safe redirects)."""
+"""Session helpers (fixation prevention, safe redirects, logout destroy)."""
 
 from __future__ import annotations
 
@@ -8,11 +8,26 @@ from urllib.parse import urlparse
 from flask import current_app, session
 
 
+def _redis_client():
+    interface = current_app.session_interface
+    return getattr(interface, "client", None) or getattr(interface, "redis", None)
+
+
+def _delete_store_key(sid: str | None) -> None:
+    if not sid:
+        return
+    key_prefix = current_app.config.get("SESSION_KEY_PREFIX", "session:")
+    try:
+        redis_client = _redis_client()
+        if redis_client is not None:
+            redis_client.delete(f"{key_prefix}{sid}")
+    except Exception:
+        pass
+
+
 def regenerate_session() -> None:
     """Issue a new server-side session id to prevent session fixation."""
-    interface = current_app.session_interface
     old_sid = getattr(session, "sid", None)
-    key_prefix = current_app.config.get("SESSION_KEY_PREFIX", "session:")
 
     session.clear()
 
@@ -21,17 +36,19 @@ def regenerate_session() -> None:
         session.sid = new_sid
     session.modified = True
 
-    # Best-effort delete of the previous Redis (or store) key
-    if not old_sid:
-        return
-    try:
-        redis_client = getattr(interface, "client", None) or getattr(
-            interface, "redis", None
-        )
-        if redis_client is not None:
-            redis_client.delete(f"{key_prefix}{old_sid}")
-    except Exception:
-        pass
+    _delete_store_key(old_sid)
+
+
+def destroy_session() -> None:
+    """Fully destroy the current server-side session (logout)."""
+    old_sid = getattr(session, "sid", None)
+    session.clear()
+    session.modified = True
+    _delete_store_key(old_sid)
+    # Force a new empty sid so the old cookie cannot reopen the deleted record.
+    new_sid = secrets.token_urlsafe(32)
+    if hasattr(session, "sid"):
+        session.sid = new_sid
 
 
 def safe_post_login_url(candidate: str | None) -> str:

@@ -49,10 +49,30 @@ Store the output in Secret Manager (and locally in `.env` for dev only). Never c
 
 ## Rotating `FERNET_KEY`
 
-1. Generate a **new** Fernet key and store it in Secret Manager as a new secret version (keep the old version readable).
-2. Temporarily load **both** keys in a one-off script: decrypt each `plaid_credentials.access_token_enc` and `ms_graph_credentials.access_token_enc` / `refresh_token_enc` with the old key, re-encrypt with the new key, and write the rows back.
-3. Point the app at the new key only.
-4. Disable the old Secret Manager version after a successful decrypt check on a sample row.
+App decrypt supports a rotation window: primary `FERNET_KEY` plus optional comma-separated `FERNET_PREVIOUS_KEYS` (decrypt-only fallbacks via `MultiFernet`). Encrypt always uses the primary key.
+
+### Dry-run / apply script
+
+```bash
+# Generate new key
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+
+# Dry-run (no DB writes): current key decrypts, new key re-encrypts in memory
+set FERNET_KEY=<current-key>
+set FERNET_NEW_KEY=<new-key>
+python scripts/rotate_fernet_keys.py --dry-run
+
+# Apply re-encryption to all Plaid + MS Graph credential blobs
+python scripts/rotate_fernet_keys.py --apply
+```
+
+### Production cutover
+
+1. Store the new key in Secret Manager; keep the old version readable.
+2. Run `--dry-run`, then `--apply` against the DB.
+3. Point the app `FERNET_KEY` at the new key; set `FERNET_PREVIOUS_KEYS` to the old key briefly.
+4. Confirm a sample `decrypt_token` / status refresh succeeds.
+5. Clear `FERNET_PREVIOUS_KEYS` and disable the old Secret Manager version.
 
 If the only copy of `FERNET_KEY` is lost, stored tokens cannot be recovered. Users must reconnect Plaid and Microsoft Graph.
 
@@ -148,3 +168,65 @@ Then the login page shows **Continue as local dev user**, which calls `POST /api
 - [ ] `ENABLE_DEV_LOGIN` unset or `false`
 - [ ] `/api/health` shows `"dev_login_enabled": false`
 - [ ] No orange **DEV AUTH BYPASS** banner in the UI
+
+## Security hardening audit (issue #28)
+
+Verified locally with `python scripts/verify_portal_security_audit.py` (and prior issue scripts). Gaps closed in this issue are called out below.
+
+### Cookies / sessions
+
+| Check | Status |
+|---|---|
+| `HttpOnly`, `SameSite=Lax` | Verified (config) |
+| `Secure` in production | Enforced by production boot guard + default when `FLASK_ENV=production` |
+| 8h session lifetime → `/auth/me` 401 when expired | Lifetime configured 8h; logout / missing session returns 401 |
+| Session ID changes after `/auth/callback` | `regenerate_session()` on SSO + dev-login |
+| Logout destroys server-side session | `destroy_session()` deletes Redis key + rotates sid |
+
+### CSRF
+
+| Check | Status |
+|---|---|
+| POST/PUT/DELETE/PATCH require `X-CSRF-Token` → 403 | Verified |
+| GET does not require CSRF | Verified |
+| Axios interceptor sends CSRF on mutations | `portal/src/api/client.ts` |
+
+### Rate limits
+
+| Endpoint class | Limit |
+|---|---|
+| Default / reads | 30/min |
+| `/auth/login` | 10/min |
+| Auth/Graph callbacks, Plaid exchange/disconnect | 5/min |
+| Mutations (connect, export, permissions, logout) | 10/min |
+| Plaid/MS Graph status | 15/min |
+| Burst → 429 | Verified |
+
+### Encryption / secrets
+
+| Check | Status |
+|---|---|
+| No endpoint returns tokens/secrets/keys | Audited (`/auth/me`, integrations, exports) |
+| Production loads secrets via Secret Manager | Boot refuses production without `USE_GCP_SECRETS`, real `SECRET_KEY`, `FERNET_KEY`, `SESSION_COOKIE_SECURE` |
+| Fernet rotation dry-run | `scripts/rotate_fernet_keys.py` + `FERNET_PREVIOUS_KEYS` |
+
+### Response security
+
+| Check | Status |
+|---|---|
+| HSTS, nosniff, DENY frame, Referrer-Policy | Middleware |
+| Errors never leak stack/SQL/paths/keys | Generic JSON 500 handler; DEBUG/PROPAGATE off |
+| CORS restricted to portal origins | `CORS_ORIGINS` (default localhost:5175) |
+
+### Input validation
+
+| Check | Status |
+|---|---|
+| Reject unexpected JSON fields → 400 | Plaid/MS Graph mutation bodies allowlisted |
+| Enums / lengths / structure | Existing scope allowlists + public_token checks |
+| OAuth `state` single-use | SSO + MS Graph callbacks `session.pop` state before exchange |
+
+```bash
+python scripts/verify_portal_security.py
+python scripts/verify_portal_security_audit.py
+```
