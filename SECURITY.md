@@ -113,6 +113,16 @@ python scripts/verify_portal_msgraph.py
 python scripts/verify_portal_msgraph_permissions.py
 ```
 
+### Data export wiring (issue #27)
+
+- `POST /api/plaid/export` (10/min, CSRF): decrypts the Plaid access token in memory, calls legacy `plaid/extractors/plaid_ext.fetch_and_store`, returns file path / item metadata only.
+- `POST /api/msgraph/export` (10/min, CSRF): decrypts the Graph access token in memory, calls `microsoft/ms_graph_email_client.py` (profile / mail / calendar). Request `include_*` flags are a wish list; pulls are gated by `scopes_granted` ∩ `is_active`.
+- Plaintext tokens must never appear in responses, logs, or export JSON.
+
+```bash
+python scripts/verify_portal_exports.py
+```
+
 ## LOCAL ONLY — auth bypass (never in production)
 
 One development escape lets you use the portal without Microsoft SSO:

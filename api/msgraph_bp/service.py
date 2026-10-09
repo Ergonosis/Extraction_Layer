@@ -1,4 +1,4 @@
-"""MS Graph delegated connect / disconnect / status business logic."""
+"""MS Graph delegated connect / disconnect / status / export business logic."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from api.integrations.constants import MS_GRAPH_SCOPE_LABELS
 from api.integrations.service import ensure_provider_rows, serialize_integration
 from api.models import Integration, MsGraphCredential, MsGraphPermission
 from api.msgraph_bp import msal_graph
+from api.msgraph_bp.graph_data import client_from_access_token
 
 logger = logging.getLogger(__name__)
 
@@ -462,3 +463,188 @@ def check_status(*, user_id: int, organization_id: int) -> dict:
 def portal_post_connect_url() -> str:
     base = (current_app.config.get("PORTAL_URL") or "http://localhost:5175").rstrip("/")
     return f"{base}/connections"
+
+
+def _as_bool(value: object, default: bool) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return default
+
+
+def _parse_iso_datetime(value: str, field: str) -> datetime:
+    raw = value.strip()
+    if raw.endswith("Z"):
+        raw = raw[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(raw)
+    except ValueError as exc:
+        raise MsGraphServiceError(
+            f"{field} must be an ISO 8601 datetime"
+        ) from exc
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _require_datetime_range(
+    start_datetime: object,
+    end_datetime: object,
+    *,
+    needed: bool,
+) -> tuple[str | None, str | None]:
+    if not needed:
+        return None, None
+    if not isinstance(start_datetime, str) or not start_datetime.strip():
+        raise MsGraphServiceError("start_datetime is required for mail/calendar export")
+    if not isinstance(end_datetime, str) or not end_datetime.strip():
+        raise MsGraphServiceError("end_datetime is required for mail/calendar export")
+
+    start_raw = start_datetime.strip()
+    end_raw = end_datetime.strip()
+    start_dt = _parse_iso_datetime(start_raw, "start_datetime")
+    end_dt = _parse_iso_datetime(end_raw, "end_datetime")
+    if end_dt <= start_dt:
+        raise MsGraphServiceError("end_datetime must be after start_datetime")
+
+    return start_raw, end_raw
+
+
+def _active_granted_scopes(integration: Integration, cred: MsGraphCredential) -> set[str]:
+    granted = set(cred.scopes_granted or [])
+    active = {
+        p.scope
+        for p in (integration.ms_graph_permissions or [])
+        if p.is_active
+    }
+    return granted & active
+
+
+def run_export(
+    *,
+    user_id: int,
+    organization_id: int,
+    include_profile: object = True,
+    include_mail: object = True,
+    include_calendar: object = True,
+    start_datetime: object = None,
+    end_datetime: object = None,
+    max_pages: object = 1,
+) -> dict:
+    """Decrypt Graph token in-memory and pull profile/mail/calendar via legacy client.
+
+    DB ``scopes_granted`` + ``is_active`` gate each pull. Request ``include_*`` flags
+    are only a wish list. Never returns or logs the access token.
+    """
+    integration = _msgraph_integration(user_id=user_id, organization_id=organization_id)
+    cred = integration.ms_graph_credential
+    if cred is None or integration.status not in ("connected", "reauth_required"):
+        raise MsGraphServiceError(
+            "Connect Microsoft Graph before exporting data",
+            status_code=400,
+        )
+
+    want_profile = _as_bool(include_profile, True)
+    want_mail = _as_bool(include_mail, True)
+    want_calendar = _as_bool(include_calendar, True)
+    if not (want_profile or want_mail or want_calendar):
+        raise MsGraphServiceError("Select at least one of profile, mail, or calendar")
+
+    pages: int | None = 1
+    if max_pages is not None and max_pages != "":
+        try:
+            pages = int(max_pages)
+        except (TypeError, ValueError) as exc:
+            raise MsGraphServiceError("max_pages must be an integer") from exc
+        if pages <= 0:
+            raise MsGraphServiceError("max_pages must be greater than 0")
+
+    allowed = _active_granted_scopes(integration, cred)
+    skipped: list[dict] = []
+    pull_profile = want_profile and "User.Read" in allowed
+    pull_mail = want_mail and "Mail.Read" in allowed
+    pull_calendar = want_calendar and "Calendars.Read" in allowed
+
+    if want_profile and not pull_profile:
+        skipped.append(
+            {
+                "scope": "User.Read",
+                "reason": "not_granted_or_inactive",
+            }
+        )
+    if want_mail and not pull_mail:
+        skipped.append(
+            {
+                "scope": "Mail.Read",
+                "reason": "not_granted_or_inactive",
+            }
+        )
+    if want_calendar and not pull_calendar:
+        skipped.append(
+            {
+                "scope": "Calendars.Read",
+                "reason": "not_granted_or_inactive",
+            }
+        )
+
+    if not (pull_profile or pull_mail or pull_calendar):
+        raise MsGraphServiceError(
+            "No requested exports are enabled; update permissions first",
+            status_code=403,
+        )
+
+    start, end = _require_datetime_range(
+        start_datetime,
+        end_datetime,
+        needed=pull_mail or pull_calendar,
+    )
+
+    try:
+        access_token = decrypt_token(cred.access_token_enc)
+        client = client_from_access_token(access_token)
+    except RuntimeError as exc:
+        raise MsGraphServiceError(str(exc), status_code=503) from exc
+    except ValueError as exc:
+        raise MsGraphServiceError(str(exc), status_code=400) from exc
+
+    profile = None
+    messages: list = []
+    events: list = []
+
+    try:
+        if pull_profile:
+            profile = client.fetch_profile()
+        if pull_mail:
+            messages = client.fetch_messages(
+                "me",
+                start,
+                end,
+                max_pages=pages,
+            )
+        if pull_calendar:
+            events = client.fetch_events(
+                start,
+                end,
+                max_pages=pages,
+            )
+    except RuntimeError as exc:
+        logger.warning("MS Graph export failed: %s", exc)
+        raise MsGraphServiceError("Microsoft Graph export failed", status_code=502) from exc
+    except Exception as exc:
+        logger.exception("Unexpected error during MS Graph export")
+        raise MsGraphServiceError("Microsoft Graph export failed", status_code=502) from exc
+
+    return {
+        "profile": profile,
+        "mail_count": len(messages),
+        "calendar_count": len(events),
+        "messages": messages,
+        "events": events,
+        "skipped": skipped,
+        "integration": serialize_integration(integration),
+    }

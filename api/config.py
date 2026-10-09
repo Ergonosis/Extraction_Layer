@@ -98,6 +98,8 @@ class Config:
     PLAID_CLIENT_ID = os.getenv("PLAID_CLIENT_ID", "")
     PLAID_SECRET = _load_secret("PLAID_SECRET", "")
     PLAID_ENV = os.getenv("PLAID_ENV", "sandbox")
+    # Where portal-triggered Plaid exports write JSON (issue #27)
+    PLAID_RECORDS_DIR = os.getenv("PLAID_RECORDS_DIR", "records")
 
     # Fernet key for token encryption (used by later issues)
     FERNET_KEY = _load_secret("FERNET_KEY", "")
