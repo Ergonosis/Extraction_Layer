@@ -17,6 +17,7 @@ from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.products import Products
 
+from api.audit import audit
 from api.crypto import decrypt_token, encrypt_token
 from api.extensions import db
 from api.integrations.service import ensure_provider_rows, serialize_integration
@@ -129,6 +130,11 @@ def create_link_token(*, user_id: int, organization_id: int) -> dict:
     integration.status = "connecting"
     integration.updated_at = _utcnow()
     db.session.commit()
+    audit(
+        "plaid.connect.start",
+        user_id=user_id,
+        organization_id=organization_id,
+    )
 
     return {
         "link_token": link_token,
@@ -187,6 +193,12 @@ def exchange_public_token(
     integration.connected_at = _utcnow()
     integration.updated_at = _utcnow()
     db.session.commit()
+    audit(
+        "plaid.connect.success",
+        user_id=user_id,
+        organization_id=organization_id,
+        item_id=item_id,
+    )
 
     return {"integration": serialize_integration(integration)}
 
@@ -220,6 +232,11 @@ def disconnect(*, user_id: int, organization_id: int) -> dict:
     integration.connected_at = None
     integration.updated_at = _utcnow()
     db.session.commit()
+    audit(
+        "plaid.disconnect",
+        user_id=user_id,
+        organization_id=organization_id,
+    )
 
     return {"integration": serialize_integration(integration)}
 
@@ -377,6 +394,12 @@ def run_export(
         logger.exception("Unexpected error during Plaid export")
         raise PlaidServiceError("Plaid export failed", status_code=502) from exc
 
+    audit(
+        "plaid.export",
+        user_id=user_id,
+        organization_id=organization_id,
+        item_id=cred.item_id,
+    )
     return {
         "file": file_path,
         "item_id": cred.item_id,

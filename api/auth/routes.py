@@ -6,6 +6,7 @@ import secrets
 
 from flask import current_app, jsonify, redirect, request, session
 
+from api.audit import audit
 from api.auth import bp
 from api.auth import msal_client
 from api.auth.decorators import login_required
@@ -88,6 +89,7 @@ def callback():
     error = request.args.get("error")
     if error:
         detail = request.args.get("error_description") or error
+        audit("auth.login.failure", reason="idp_error")
         return jsonify({"error": "Authentication failed", "detail": detail}), 401
 
     code = request.args.get("code")
@@ -96,6 +98,7 @@ def callback():
     post_login_redirect = session.pop("post_login_redirect", None)
 
     if not code or not state or not expected_state:
+        audit("auth.login.failure", reason="missing_code_or_state")
         return (
             jsonify(
                 {
@@ -106,6 +109,7 @@ def callback():
             400,
         )
     if not secrets.compare_digest(state, expected_state):
+        audit("auth.login.failure", reason="invalid_state")
         return (
             jsonify({"error": "Authentication failed", "detail": "Invalid state"}),
             400,
@@ -117,6 +121,11 @@ def callback():
             tenant_allowlist=current_app.config.get("MS_TENANT_ALLOWLIST") or [],
         )
     except AuthError as exc:
+        audit(
+            "auth.login.failure",
+            reason=exc.error,
+            status_code=exc.status_code,
+        )
         return jsonify({"error": exc.error, "detail": exc.detail}), exc.status_code
 
     # Session fixation prevention: new sid before attaching identity
@@ -125,6 +134,12 @@ def callback():
     session["user_id"] = result.user_id
     session["organization_id"] = result.organization_id
     ensure_csrf_token()
+    audit(
+        "auth.login.success",
+        user_id=result.user_id,
+        organization_id=result.organization_id,
+        method="sso",
+    )
 
     return redirect(safe_post_login_url(post_login_redirect), code=302)
 
@@ -156,7 +171,10 @@ def me():
 @login_required
 def logout():
     """Destroy the portal session (does not revoke Microsoft SSO)."""
+    user_id = session.get("user_id")
+    organization_id = session.get("organization_id")
     destroy_session()
+    audit("auth.logout", user_id=user_id, organization_id=organization_id)
     return jsonify({"status": "logged_out"})
 
 
@@ -201,6 +219,12 @@ def dev_login():
     session["user_id"] = user.id
     session["organization_id"] = org.id
     ensure_csrf_token()
+    audit(
+        "auth.login.success",
+        user_id=user.id,
+        organization_id=org.id,
+        method="dev_login",
+    )
 
     return jsonify(
         {

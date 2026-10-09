@@ -68,7 +68,64 @@ python scripts/verify_portal_tenancy.py
 
 ### GCP deploy scripts (issue #48)
 
-Build/push/migrate/deploy tooling lives under `deploy/` (Dockerfile at repo root). See **[docs/deploy-gcp.md](docs/deploy-gcp.md)** for Cloud Run + Secret Manager steps. Edge hardening (Armor, CSP, audit logs) remains issue **#33**.
+Build/push/migrate/deploy tooling lives under `deploy/` (Dockerfile at repo root). See **[docs/deploy-gcp.md](docs/deploy-gcp.md)** for Cloud Run + Secret Manager steps.
+
+## Production GCP hardening (issue #33)
+
+App-layer cookies/CSRF/rate limits/Fernet are covered by #20 / #28. This section covers **network posture, SPA CSP, audit logs, and monitoring**. Cloud Armor / WAF is **deferred** (see below).
+
+### Private Redis + Cloud SQL
+
+| Resource | Production pattern |
+|---|---|
+| Cloud SQL | Private IP **or** Unix socket via Cloud SQL connector: `postgresql://USER:PASS@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE` |
+| Memorystore | Private VPC IP, e.g. `redis://10.x.x.x:6379/0` (enable AUTH when available); **not** a public `:6379` |
+| Cloud Run | Serverless VPC Access connector + `--vpc-egress=private-ranges-only` so the service can reach SQL/Redis |
+| Secrets | `USE_GCP_SECRETS=true`, runtime SA with `roles/secretmanager.secretAccessor` + `roles/cloudsql.client` only |
+
+TLS terminates at Cloud Run / HTTPS load balancer. Production boot requires `SESSION_COOKIE_SECURE=true` (see `api/app.py`). Never set `ENABLE_DEV_LOGIN` in production.
+
+### Content-Security-Policy (SPA)
+
+Because the SPA is served from the same Cloud Run origin (`PORTAL_STATIC_DIR`), Flask sets CSP on every response in `api/middleware.py`.
+
+| `CSP_MODE` | Behavior |
+|---|---|
+| *(empty)* | `enforce` when `FLASK_ENV=production`, else `report-only` |
+| `report-only` | `Content-Security-Policy-Report-Only` (safe to test) |
+| `enforce` | `Content-Security-Policy` |
+| `off` | No CSP header |
+
+Default policy (`api/csp.py`) allows `'self'` plus Plaid Link and Microsoft login/Graph hosts. Override with `CSP_POLICY` only if you know you need a different allowlist. After changing CSP, re-test Connect flows for Plaid and Entra.
+
+### Audit logging
+
+Structured JSON lines go to logger `portal.audit` (stdout → Cloud Logging on Cloud Run). Helper: `api/audit.py` → `audit(event, user_id=..., organization_id=..., **extra)`.
+
+Events include: `auth.login.success` / `auth.login.failure` / `auth.logout`, `org.created` / `user.created`, `plaid.connect.*` / `plaid.disconnect` / `plaid.export`, `msgraph.connect.*` / `msgraph.disconnect` / `msgraph.permissions.*` / `msgraph.export`.
+
+**Never** put tokens, cookies, CSRF values, or Fernet material in audit fields (keys containing those substrings are stripped).
+
+### Recommended Cloud Logging alert (at least one)
+
+Create a log-based metric + alerting policy on:
+
+```text
+jsonPayload.event="auth.login.failure"
+OR textPayload:"auth.login.failure"
+```
+
+(Adjust for your Cloud Run log format — many setups parse JSON stdout into `jsonPayload`.) Alert when count exceeds a small threshold over 5–15 minutes (auth abuse / credential stuffing). Optional second alert: spike of HTTP `429` or `403` on `/api/auth/*`.
+
+Also watch Cloud Monitoring for Cloud SQL / Memorystore connectivity errors and Secret Manager access denials.
+
+### Cloud Armor / WAF — deferred
+
+**Decision (issue #33):** defer Cloud Armor until a public multi-tenant launch. App-level `flask-limiter` remains the primary rate control. Revisit Armor (edge bot/IP rules) when exposing a custom domain to the open internet; document any policy alongside this section.
+
+```bash
+python scripts/verify_portal_security_audit.py
+```
 
 ## CSRF
 

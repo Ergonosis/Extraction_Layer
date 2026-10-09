@@ -118,7 +118,7 @@ def main() -> int:
 
     client = app.test_client()
 
-    step("Security headers + CORS origin config")
+    step("Security headers + CORS + CSP (issue #33)")
     health = client.get("/api/health")
     for name, expect in (
         ("Strict-Transport-Security", "max-age="),
@@ -129,9 +129,53 @@ def main() -> int:
         value = health.headers.get(name, "")
         if expect not in value:
             fail(f"header {name} missing/unexpected: {value}")
+    # Non-production default is report-only CSP.
+    csp_ro = health.headers.get("Content-Security-Policy-Report-Only", "")
+    csp_en = health.headers.get("Content-Security-Policy", "")
+    if "default-src" not in csp_ro and "default-src" not in csp_en:
+        fail(f"expected CSP header, got report-only={csp_ro!r} enforce={csp_en!r}")
     if "localhost:5175" not in ",".join(Config.CORS_ORIGINS):
         fail(f"CORS_ORIGINS should include portal origin, got {Config.CORS_ORIGINS}")
-    ok("headers + CORS origins look correct")
+    ok("headers + CORS + CSP look correct")
+
+    step("Audit helper strips secret-like keys")
+    from api.audit import audit as emit_audit
+    import logging
+
+    class _Capture(logging.Handler):
+        def __init__(self):
+            super().__init__()
+            self.records: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.records.append(record.getMessage())
+
+    capture = _Capture()
+    audit_logger = logging.getLogger("portal.audit")
+    audit_logger.addHandler(capture)
+    prev_level = audit_logger.level
+    audit_logger.setLevel(logging.INFO)
+    try:
+        emit_audit(
+            "test.event",
+            user_id=1,
+            organization_id=2,
+            access_token="should-not-appear",
+            ok_field="visible",
+        )
+    finally:
+        audit_logger.removeHandler(capture)
+        audit_logger.setLevel(prev_level)
+    if not capture.records:
+        fail("expected an audit log line")
+    line = capture.records[-1]
+    if "should-not-appear" in line or "access_token" in line:
+        fail(f"audit leaked secret material: {line}")
+    if '"ok_field":"visible"' not in line and '"ok_field": "visible"' not in line:
+        # separators=(",", ":") → no spaces
+        if '"ok_field":"visible"' not in line:
+            fail(f"audit missing safe field: {line}")
+    ok("audit JSON omits blocked keys")
 
     step("CSRF: mutations require token; GET does not")
     denied = client.post("/api/auth/ping")
@@ -260,7 +304,7 @@ def main() -> int:
         fail("expected 429 under burst")
     ok("rate limiter returns 429")
 
-    print("\nAll issue #28 security audit checks passed.")
+    print("\nAll issue #28 / #33 security audit checks passed.")
     return 0
 
 

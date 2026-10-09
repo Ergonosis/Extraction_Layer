@@ -126,6 +126,11 @@ class Config:
     # Empty / missing = API-only (local `flask run` + Vite on :5175).
     PORTAL_STATIC_DIR = os.getenv("PORTAL_STATIC_DIR", "")
 
+    # Content-Security-Policy for SPA responses (issue #33).
+    # Values: off | report-only | enforce. Empty = enforce in production, report-only otherwise.
+    CSP_MODE = os.getenv("CSP_MODE", "")
+    CSP_POLICY = os.getenv("CSP_POLICY", "")
+
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 

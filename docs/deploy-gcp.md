@@ -104,7 +104,17 @@ curl -sS "$PORTAL_URL/api/health"
 
 Optional local suite (against Docker Postgres/Redis, not Cloud Run): `scripts/verify_portal_*.py`.
 
+## Production networking checklist (issue #33)
+
+- [ ] Memorystore on private VPC; `REDIS_URL` uses private IP (not public `6379`)
+- [ ] Cloud SQL private IP or `/cloudsql/…` socket; Cloud Run has VPC connector + Cloud SQL instance attachment
+- [ ] Runtime SA: Secret Manager accessor + Cloud SQL client only
+- [ ] `FLASK_ENV=production`, `USE_GCP_SECRETS=true`, `SESSION_COOKIE_SECURE=true`, `ENABLE_DEV_LOGIN=false`
+- [ ] HTTPS URL; CSP defaults to enforce in production (`CSP_MODE` optional)
+- [ ] Cloud Logging alert on `auth.login.failure` (see `SECURITY.md`)
+- [ ] Cloud Armor / WAF deferred until public multi-tenant launch (recorded in `SECURITY.md`)
+
 ## Related docs
 
-- `SECURITY.md` — sessions, Redis, Secret Manager, tenancy, cost tiers
-- Issue #33 — WAF / CSP / audit logs (follow-up)
+- `SECURITY.md` — sessions, Redis, Secret Manager, tenancy, CSP, audit logs, cost tiers
+- Issue #33 — production hardening (WAF deferred)

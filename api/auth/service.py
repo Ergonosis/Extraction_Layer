@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Callable, Sequence
 
+from api.audit import audit
 from api.auth import msal_client
 from api.extensions import db
 from api.models import Organization, User
@@ -67,12 +68,14 @@ def _claims_from_msal_result(result: dict) -> tuple[str, str, str, str]:
 def upsert_org_and_user(*, oid: str, tid: str, email: str, name: str) -> LoginResult:
     """Create or update organization + user rows; commit and return ids."""
     org = Organization.query.filter_by(ms_tenant_id=tid).one_or_none()
+    org_created = org is None
     if org is None:
         org = Organization(name=org_name_from_claims(email, tid), ms_tenant_id=tid)
         db.session.add(org)
         db.session.flush()
 
     user = User.query.filter_by(organization_id=org.id, ms_oid=oid).one_or_none()
+    user_created = user is None
     if user is None:
         user = User(
             organization_id=org.id,
@@ -90,6 +93,19 @@ def upsert_org_and_user(*, oid: str, tid: str, email: str, name: str) -> LoginRe
         user.last_login = _utcnow()
 
     db.session.commit()
+    if org_created:
+        audit(
+            "org.created",
+            user_id=user.id,
+            organization_id=org.id,
+            ms_tenant_id=tid,
+        )
+    if user_created:
+        audit(
+            "user.created",
+            user_id=user.id,
+            organization_id=org.id,
+        )
     return LoginResult(user_id=user.id, organization_id=org.id)
 
 

@@ -6,6 +6,8 @@ import secrets
 
 from flask import Flask, jsonify, request, session
 
+from api.csp import DEFAULT_CSP, resolve_csp_mode
+
 MUTATING_METHODS = frozenset({"POST", "PUT", "DELETE", "PATCH"})
 
 # Paths that skip CSRF (keep empty of mutations that change state).
@@ -46,4 +48,15 @@ def register_security_middleware(app: Flask) -> None:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+
+        mode = resolve_csp_mode(
+            app.config.get("CSP_MODE"),
+            flask_env=str(app.config.get("FLASK_ENV") or ""),
+        )
+        policy = (app.config.get("CSP_POLICY") or "").strip() or DEFAULT_CSP
+        if mode == "enforce":
+            response.headers["Content-Security-Policy"] = policy
+        elif mode == "report-only":
+            response.headers["Content-Security-Policy-Report-Only"] = policy
+
         return response
