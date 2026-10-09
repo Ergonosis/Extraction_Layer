@@ -7,16 +7,12 @@ export type IntegrationPermission = {
 }
 
 export type IntegrationStatus =
-  | 'not_connected'
-  | 'connecting'
-  | 'connected'
-  | 'reauth_required'
-  | 'error'
+  'not_connected' | 'connecting' | 'connected' | 'reauth_required' | 'error'
 
 export type Integration = {
-  provider: 'plaid' | 'msgraph' | string
+  provider: 'plaid' | 'msgraph' | (string & {})
   label: string
-  status: IntegrationStatus | string
+  status: IntegrationStatus | (string & {})
   connected_account: string | null
   connected_at: string | null
   updated_at: string | null
@@ -24,6 +20,8 @@ export type Integration = {
 }
 
 export async function fetchIntegrations(): Promise<Integration[]> {
-  const { data } = await api.get<{ integrations: Integration[] }>('/api/integrations/')
+  const { data } = await api.get<{ integrations: Integration[] }>(
+    '/api/integrations/',
+  )
   return data.integrations
 }

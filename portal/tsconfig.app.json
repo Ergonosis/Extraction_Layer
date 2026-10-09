@@ -19,8 +19,19 @@
     /* Linting */
     "noUnusedLocals": true,
     "noUnusedParameters": true,
-    "erasableSyntaxOnly": true,
-    "noFallthroughCasesInSwitch": true
+    // "erasableSyntaxOnly": true,
+    "noFallthroughCasesInSwitch": true,
+
+    // must have
+    // "verbatimModuleSyntax": true,
+    // "noFallthroughCasesInSwitch": true,
+    "allowUnusedLabels": false,
+    "noUncheckedSideEffectImports": true,
+
+    // recommended
+    "noUncheckedIndexedAccess": true,
+    "noPropertyAccessFromIndexSignature": true,
+    "noImplicitOverride": true
   },
   "include": ["src"]
 }
