@@ -6,6 +6,7 @@ from functools import wraps
 
 from flask import jsonify, session
 
+from api.auth.session_utils import destroy_session
 from api.extensions import db
 from api.models import User
 
@@ -22,8 +23,7 @@ def login_required(view):
 
         user = db.session.get(User, user_id)
         if user is None or user.organization_id != organization_id:
-            session.clear()
-            session.modified = True
+            destroy_session()
             return jsonify({"error": "Authentication required"}), 401
 
         return view(*args, **kwargs)

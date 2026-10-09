@@ -25,6 +25,7 @@ from api.rate_limit import (
     mutation_limit,
     strict_mutation_limit,
 )
+from api.validation import ValidationError, reject_unknown_fields, require_object
 
 
 @bp.get("/ping")
@@ -33,7 +34,7 @@ def ping():
     return jsonify({"blueprint": "msgraph", "status": "ok"})
 
 
-def _error_response(exc: MsGraphServiceError):
+def _error_response(exc: MsGraphServiceError | ValidationError):
     return jsonify({"error": exc.message}), exc.status_code
 
 
@@ -42,13 +43,16 @@ def _error_response(exc: MsGraphServiceError):
 @login_required
 def connect():
     """Start Graph consent; validate scopes against allowlist; return authorize_url."""
-    body = request.get_json(silent=True) or {}
     try:
+        body = require_object(request.get_json(silent=True))
+        reject_unknown_fields(body, ("scopes",))
         payload = start_connect(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
             requested_scopes=body.get("scopes"),
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except MsGraphServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)
@@ -61,7 +65,6 @@ def callback():
     """Handle Microsoft redirect: exchange code, store encrypted tokens."""
     error = request.args.get("error")
     if error:
-        detail = request.args.get("error_description") or error
         try:
             cancel_connect(
                 user_id=session["user_id"],
@@ -89,10 +92,14 @@ def callback():
 def disconnect_route():
     """Delete Graph credentials without decrypting; clear permissions."""
     try:
+        body = require_object(request.get_json(silent=True))
+        reject_unknown_fields(body, ())
         payload = disconnect(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except MsGraphServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)
@@ -104,10 +111,14 @@ def disconnect_route():
 def cancel_route():
     """Reset abandoned connecting status."""
     try:
+        body = require_object(request.get_json(silent=True))
+        reject_unknown_fields(body, ())
         payload = cancel_connect(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except MsGraphServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)
@@ -148,13 +159,16 @@ def permissions_available():
 @login_required
 def permissions_update():
     """Toggle active scopes or return incremental consent redirect_url."""
-    body = request.get_json(silent=True) or {}
     try:
+        body = require_object(request.get_json(silent=True))
+        reject_unknown_fields(body, ("scopes",))
         payload = update_permissions(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
             requested_scopes=body.get("scopes"),
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except MsGraphServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)
@@ -165,8 +179,19 @@ def permissions_update():
 @login_required
 def export_route():
     """Pull profile/mail/calendar via legacy client; gated by DB permissions."""
-    body = request.get_json(silent=True) or {}
     try:
+        body = require_object(request.get_json(silent=True))
+        reject_unknown_fields(
+            body,
+            (
+                "include_profile",
+                "include_mail",
+                "include_calendar",
+                "start_datetime",
+                "end_datetime",
+                "max_pages",
+            ),
+        )
         payload = run_export(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
@@ -177,6 +202,8 @@ def export_route():
             end_datetime=body.get("end_datetime"),
             max_pages=body.get("max_pages", 1),
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except MsGraphServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)

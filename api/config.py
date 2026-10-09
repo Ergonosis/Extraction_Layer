@@ -103,6 +103,14 @@ class Config:
 
     # Fernet key for token encryption (used by later issues)
     FERNET_KEY = _load_secret("FERNET_KEY", "")
+    # Optional previous Fernet keys (comma-separated) for decrypt during rotation.
+    FERNET_PREVIOUS_KEYS = [
+        k.strip()
+        for k in os.getenv("FERNET_PREVIOUS_KEYS", "").split(",")
+        if k.strip()
+    ]
+    # When true (or FLASK_ENV=production), prefer Secret Manager for secrets.
+    USE_GCP_SECRETS = _env_bool("USE_GCP_SECRETS", False)
 
     # CORS: portal origin for local Vite dev server
     CORS_ORIGINS = [

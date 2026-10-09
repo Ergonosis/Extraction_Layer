@@ -6,6 +6,7 @@ import sys
 from flask import Flask, jsonify
 from flask_cors import CORS
 from flask_session import Session
+from werkzeug.exceptions import HTTPException
 
 from api.config import Config
 from api.extensions import db, migrate
@@ -13,6 +14,8 @@ from api.middleware import register_security_middleware
 from api.rate_limit import init_limiter
 
 logger = logging.getLogger(__name__)
+
+_DEV_SECRET_DEFAULT = "dev-only-change-me"
 
 
 def _assert_dev_login_safe(app: Flask) -> None:
@@ -44,11 +47,55 @@ def _assert_dev_login_safe(app: Flask) -> None:
         )
 
 
+def _assert_production_secrets(app: Flask) -> None:
+    """Refuse weak / missing secrets when FLASK_ENV=production (issue #28)."""
+    env = (app.config.get("FLASK_ENV") or "").strip().lower()
+    if env != "production":
+        return
+
+    secret = app.config.get("SECRET_KEY") or ""
+    fernet = app.config.get("FERNET_KEY") or ""
+    use_gcp = bool(app.config.get("USE_GCP_SECRETS"))
+
+    problems: list[str] = []
+    if not secret or secret == _DEV_SECRET_DEFAULT:
+        problems.append("SECRET_KEY must be set to a non-default value")
+    if not fernet:
+        problems.append("FERNET_KEY must be set")
+    if not use_gcp:
+        problems.append("USE_GCP_SECRETS must be true in production")
+    if not app.config.get("SESSION_COOKIE_SECURE", False):
+        problems.append("SESSION_COOKIE_SECURE must be true in production")
+
+    if problems:
+        detail = "; ".join(problems)
+        logger.critical("REFUSING TO START in production: %s", detail)
+        raise RuntimeError(f"Production security checks failed: {detail}")
+
+
+def _register_error_handlers(app: Flask) -> None:
+    """Return JSON errors without stack traces, paths, SQL, or key material."""
+
+    @app.errorhandler(HTTPException)
+    def _http_error(exc: HTTPException):
+        return jsonify({"error": exc.name, "detail": exc.description}), exc.code
+
+    @app.errorhandler(Exception)
+    def _unhandled_error(exc: Exception):
+        logger.exception("Unhandled server error")
+        # Never mirror exception text — it may include paths, SQL, or secrets.
+        return jsonify({"error": "Internal server error"}), 500
+
+
 def create_app(config_class=Config):
     """Create and configure the Flask application."""
     app = Flask(__name__)
     app.config.from_object(config_class)
+    # Never enable Flask interactive debugger in this app factory.
+    app.config["DEBUG"] = False
+    app.config["PROPAGATE_EXCEPTIONS"] = False
     _assert_dev_login_safe(app)
+    _assert_production_secrets(app)
 
     CORS(
         app,
@@ -68,6 +115,7 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
     init_limiter(app)
     register_security_middleware(app)
+    _register_error_handlers(app)
 
     # Register models with SQLAlchemy so Alembic can see them
     from api import models  # noqa: F401

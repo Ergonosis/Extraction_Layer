@@ -20,6 +20,7 @@ from api.rate_limit import (
     plaid_status_limit,
     strict_mutation_limit,
 )
+from api.validation import ValidationError, reject_unknown_fields, require_object
 
 
 @bp.get("/ping")
@@ -28,7 +29,7 @@ def ping():
     return jsonify({"blueprint": "plaid", "status": "ok"})
 
 
-def _error_response(exc: PlaidServiceError):
+def _error_response(exc: PlaidServiceError | ValidationError):
     return jsonify({"error": exc.message}), exc.status_code
 
 
@@ -37,11 +38,15 @@ def _error_response(exc: PlaidServiceError):
 @login_required
 def connect():
     """Create a Plaid Link token; set integration status to connecting."""
+    body = require_object(request.get_json(silent=True))
     try:
+        reject_unknown_fields(body, ())
         payload = create_link_token(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except PlaidServiceError as exc:
         return _error_response(exc)
     except RuntimeError as exc:
@@ -54,13 +59,16 @@ def connect():
 @login_required
 def exchange():
     """Exchange public_token for access_token; store Fernet ciphertext only."""
-    body = request.get_json(silent=True) or {}
     try:
+        body = require_object(request.get_json(silent=True))
+        reject_unknown_fields(body, ("public_token",))
         payload = exchange_public_token(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
             public_token=body.get("public_token"),
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except PlaidServiceError as exc:
         return _error_response(exc)
     except RuntimeError as exc:
@@ -73,11 +81,15 @@ def exchange():
 @login_required
 def disconnect_route():
     """Revoke Item at Plaid and delete local encrypted credentials."""
+    body = require_object(request.get_json(silent=True))
     try:
+        reject_unknown_fields(body, ())
         payload = disconnect(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except PlaidServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)
@@ -88,11 +100,15 @@ def disconnect_route():
 @login_required
 def cancel_route():
     """Reset abandoned `connecting` status without revoking credentials."""
+    body = require_object(request.get_json(silent=True))
     try:
+        reject_unknown_fields(body, ())
         payload = cancel_connect(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except PlaidServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)
@@ -118,8 +134,12 @@ def status():
 @login_required
 def export_route():
     """Pull transactions via legacy fetch_and_store; never returns tokens."""
-    body = request.get_json(silent=True) or {}
     try:
+        body = require_object(request.get_json(silent=True))
+        reject_unknown_fields(
+            body,
+            ("start_date", "end_date", "window_days", "account_filter"),
+        )
         payload = run_export(
             user_id=session["user_id"],
             organization_id=session["organization_id"],
@@ -128,6 +148,8 @@ def export_route():
             window_days=body.get("window_days"),
             account_filter=body.get("account_filter"),
         )
+    except ValidationError as exc:
+        return _error_response(exc)
     except PlaidServiceError as exc:
         return _error_response(exc)
     return jsonify(payload)
