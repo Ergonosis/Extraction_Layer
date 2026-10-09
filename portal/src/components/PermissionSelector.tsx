@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isAxiosError } from 'axios'
+import { userFacingApiError } from '../api/errors'
 import {
   msgraphPermissionsAvailable,
   msgraphUpdatePermissions,
 } from '../api/msgraph'
 import type { Integration, IntegrationPermission } from '../api/integrations'
+import { useToast } from '../context/ToastContext'
 import './PermissionSelector.css'
 
 type Props = {
@@ -12,15 +13,6 @@ type Props = {
   onUpdated: (next: Integration) => void
   /** When not connected, selected scopes are used by Connect instead of PUT. */
   onSelectionChange?: (scopes: string[]) => void
-}
-
-function errorMessage(err: unknown, fallback: string): string {
-  if (isAxiosError(err)) {
-    const apiError = err.response?.data?.error
-    if (typeof apiError === 'string' && apiError) return apiError
-    if (!err.response) return 'Could not reach the API. Is Flask running on :5000?'
-  }
-  return fallback
 }
 
 function initialSelected(permissions: IntegrationPermission[]): Set<string> {
@@ -32,6 +24,7 @@ export function PermissionSelector({
   onUpdated,
   onSelectionChange,
 }: Props) {
+  const { pushToast } = useToast()
   const [rows, setRows] = useState<IntegrationPermission[]>(
     () => integration.permissions,
   )
@@ -39,8 +32,7 @@ export function PermissionSelector({
     initialSelected(integration.permissions),
   )
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
+  const [loadingAvailable, setLoadingAvailable] = useState(false)
 
   const isConnected = integration.status === 'connected'
   const isConnecting = integration.status === 'connecting'
@@ -53,6 +45,7 @@ export function PermissionSelector({
 
   useEffect(() => {
     let cancelled = false
+    setLoadingAvailable(true)
     void (async () => {
       try {
         const data = await msgraphPermissionsAvailable()
@@ -61,6 +54,8 @@ export function PermissionSelector({
         setSelected(new Set(data.permissions.filter((p) => p.is_active).map((p) => p.scope)))
       } catch {
         // Fall back to integration.permissions already in state.
+      } finally {
+        if (!cancelled) setLoadingAvailable(false)
       }
     })()
     return () => {
@@ -89,28 +84,30 @@ export function PermissionSelector({
       else next.add(scope)
       return next
     })
-    setError(null)
-    setInfo(null)
   }
 
   const onSave = async () => {
     if (!isConnected) return
     setBusy(true)
-    setError(null)
-    setInfo(null)
     try {
       const result = await msgraphUpdatePermissions([...selected])
       onUpdated(result.integration)
       if (result.consent_required && result.redirect_url) {
-        setInfo('Redirecting to Microsoft to consent to new permissions…')
+        pushToast({
+          kind: 'info',
+          message: 'Redirecting to Microsoft to consent to new permissions…',
+        })
         window.location.assign(result.redirect_url)
         return
       }
       setRows(result.integration.permissions)
       setSelected(initialSelected(result.integration.permissions))
-      setInfo('Permissions updated.')
+      pushToast({ kind: 'success', message: 'Permissions updated.' })
     } catch (err) {
-      setError(errorMessage(err, 'Could not update permissions.'))
+      pushToast({
+        kind: 'error',
+        message: userFacingApiError(err, 'Could not update permissions.'),
+      })
     } finally {
       setBusy(false)
     }
@@ -123,6 +120,11 @@ export function PermissionSelector({
           ? 'New permissions require Microsoft consent. Turning a permission off only disables it here (no Microsoft revoke).'
           : 'Choose permissions to request when you connect.'}
       </p>
+      {loadingAvailable && (
+        <p className="permission-selector-info" role="status">
+          Loading permissions…
+        </p>
+      )}
       <ul className="permission-selector-list">
         {rows.map((perm) => {
           const checked = selected.has(perm.scope)
@@ -132,7 +134,7 @@ export function PermissionSelector({
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={!canEdit || busy}
+                  disabled={!canEdit || busy || loadingAvailable}
                   onChange={() => toggle(perm.scope)}
                 />
                 <span className="permission-selector-label">{perm.label}</span>
@@ -148,14 +150,12 @@ export function PermissionSelector({
         <button
           type="button"
           className="btn-primary"
-          disabled={!canEdit || busy || !dirty}
+          disabled={!canEdit || busy || !dirty || loadingAvailable}
           onClick={() => void onSave()}
         >
           {busy ? 'Saving…' : 'Save permissions'}
         </button>
       )}
-      {info && <p className="permission-selector-info">{info}</p>}
-      {error && <p className="plaid-connect-error">{error}</p>}
     </div>
   )
 }

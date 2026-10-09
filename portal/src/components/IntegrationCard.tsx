@@ -54,6 +54,12 @@ export function IntegrationCard({
             Connected {new Date(integration.connected_at).toLocaleString()}
           </p>
         )}
+        {integration.status === 'reauth_required' && (
+          <p className="integration-health-warn" role="status">
+            Connection health check failed. Reconnect to restore access, or disconnect
+            to remove stored credentials.
+          </p>
+        )}
 
         {isMsGraph && onMsGraphUpdated && (
           <PermissionSelector
