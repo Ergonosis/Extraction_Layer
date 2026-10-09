@@ -1,0 +1,31 @@
+# Build and push the portal+API image to Artifact Registry.
+# Usage (from repo root):
+#   gcloud builds submit --config deploy/cloudbuild.yaml \
+#     --substitutions=_REGION=us-central1,_REPO=portal,_IMAGE=extraction-portal
+#
+# Then deploy with: bash deploy/deploy-cloud-run.sh
+
+substitutions:
+  _REGION: us-central1
+  _REPO: portal
+  _IMAGE: extraction-portal
+  _TAG: latest
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}
+      - -t
+      - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+      - -f
+      - Dockerfile
+      - .
+
+images:
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:${_TAG}
+  - ${_REGION}-docker.pkg.dev/$PROJECT_ID/${_REPO}/${_IMAGE}:$SHORT_SHA
+
+options:
+  logging: CLOUD_LOGGING_ONLY

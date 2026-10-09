@@ -66,6 +66,10 @@ Production checklist for multi-instance scale:
 python scripts/verify_portal_tenancy.py
 ```
 
+### GCP deploy scripts (issue #48)
+
+Build/push/migrate/deploy tooling lives under `deploy/` (Dockerfile at repo root). See **[docs/deploy-gcp.md](docs/deploy-gcp.md)** for Cloud Run + Secret Manager steps. Edge hardening (Armor, CSP, audit logs) remains issue **#33**.
+
 ## CSRF
 
 Mutating requests (`POST` / `PUT` / `DELETE` / `PATCH`) must send header `X-CSRF-Token` matching the token from `GET /api/auth/csrf-token` (stored in the server session). Missing/invalid token returns `403`.

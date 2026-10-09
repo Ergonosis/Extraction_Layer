@@ -1,9 +1,10 @@
 """Flask application factory for the portal API."""
 
 import logging
+import os
 import sys
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
 from flask_session import Session
 from werkzeug.exceptions import HTTPException
@@ -147,7 +148,32 @@ def create_app(config_class=Config):
             }
         )
 
+    _register_portal_static(app)
+
     return app
+
+
+def _register_portal_static(app: Flask) -> None:
+    """Serve the built React SPA from PORTAL_STATIC_DIR (Cloud Run same-origin)."""
+    static_dir = (app.config.get("PORTAL_STATIC_DIR") or "").strip()
+    if not static_dir or not os.path.isdir(static_dir):
+        return
+    index_path = os.path.join(static_dir, "index.html")
+    if not os.path.isfile(index_path):
+        logger.warning("PORTAL_STATIC_DIR set but index.html missing: %s", static_dir)
+        return
+
+    @app.route("/", defaults={"path": ""})
+    @app.route("/<path:path>")
+    def portal_spa(path: str):
+        # API blueprints are registered first; this catch-all is for SPA routes only.
+        if path.startswith("api/") or path == "api":
+            return jsonify({"error": "Not found"}), 404
+        candidate = os.path.join(static_dir, path)
+        if path and os.path.isfile(candidate):
+            return send_from_directory(static_dir, path)
+        return send_from_directory(static_dir, "index.html")
+
 
 
 if __name__ == "__main__":
