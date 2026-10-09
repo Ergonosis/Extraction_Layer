@@ -8,7 +8,7 @@ export function AppLayout() {
 
   const onSignOut = async () => {
     await logout()
-    navigate('/login', { replace: true })
+    void navigate('/login', { replace: true })
   }
 
   return (

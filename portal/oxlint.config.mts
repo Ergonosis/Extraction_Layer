@@ -14,6 +14,8 @@ export default defineConfig({
   rules: {
     eqeqeq: ['error', 'smart'],
     'react/rules-of-hooks': 'error',
+    // Existing connect/auth effects sync props or kick off async refresh on mount.
+    'react/set-state-in-effect': 'off',
     'react/only-export-components': ['warn', { allowConstantExport: true }],
     'typescript/only-throw-error': 'error',
     'unicorn/no-array-for-each': 'error',
