@@ -38,3 +38,19 @@ export async function plaidStatus(): Promise<PlaidIntegrationResponse> {
   const { data } = await api.get<PlaidIntegrationResponse>('/api/plaid/status')
   return data
 }
+
+export type PlaidExportResponse = {
+  file: string
+  item_id: string
+  integration: Integration
+}
+
+export async function plaidExport(body?: {
+  window_days?: number
+  start_date?: string
+  end_date?: string
+  account_filter?: string
+}): Promise<PlaidExportResponse> {
+  const { data } = await api.post<PlaidExportResponse>('/api/plaid/export', body ?? {})
+  return data
+}

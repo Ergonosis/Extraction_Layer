@@ -68,3 +68,25 @@ export async function msgraphUpdatePermissions(
   )
   return data
 }
+
+export type MsGraphExportResponse = {
+  profile: unknown
+  mail_count: number
+  calendar_count: number
+  messages: unknown[]
+  events: unknown[]
+  skipped: unknown[]
+  integration: Integration
+}
+
+export async function msgraphExport(body: {
+  include_profile?: boolean
+  include_mail?: boolean
+  include_calendar?: boolean
+  start_datetime?: string
+  end_datetime?: string
+  max_pages?: number
+}): Promise<MsGraphExportResponse> {
+  const { data } = await api.post<MsGraphExportResponse>('/api/msgraph/export', body)
+  return data
+}
