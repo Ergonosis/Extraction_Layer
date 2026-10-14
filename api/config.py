@@ -87,7 +87,8 @@ class Config:
         for tid in os.getenv("MS_TENANT_ALLOWLIST", "").split(",")
         if tid.strip()
     ]
-    MS_SSO_SCOPES = ["openid", "profile", "email"]
+    # Do not pass openid/profile/offline_access — MSAL adds reserved OIDC scopes itself.
+    MS_SSO_SCOPES = ["email"]
 
     # Where the browser returns after successful SSO
     PORTAL_URL = os.getenv("PORTAL_URL", "http://localhost:5175").rstrip("/")
