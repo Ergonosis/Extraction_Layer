@@ -7,6 +7,7 @@ import {
   plaidConnect,
   plaidDisconnect,
   plaidExchange,
+  plaidExport,
 } from '../api/plaid'
 import type { Integration } from '../api/integrations'
 import { useToast } from '../context/ToastContext'
@@ -62,6 +63,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
   const { pushToast } = useToast()
   const [linkToken, setLinkToken] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  const [extractBusy, setExtractBusy] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
   const exchangeSucceededRef = useRef(false)
   const clearedStuckRef = useRef(false)
@@ -204,6 +206,28 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
     void resetToNotConnected()
   }
 
+  const onExtract = async () => {
+    if (!isConnected || extractBusy) return
+    setExtractBusy(true)
+    try {
+      const { file } = await plaidExport({ window_days: 90 })
+      const basename = file.replace(/\\/g, '/').split('/').pop() ?? file
+      pushToast({
+        kind: 'success',
+        message: `Plaid extract saved: ${basename}`,
+      })
+    } catch (err) {
+      pushToast({
+        kind: 'error',
+        message: userFacingApiError(err, 'Could not extract Plaid data.'),
+      })
+    } finally {
+      setExtractBusy(false)
+    }
+  }
+
+  const actionsLocked = busy || extractBusy
+
   return (
     <div className="plaid-connect">
       <div className="integration-card-actions">
@@ -211,7 +235,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           <button
             type="button"
             className="btn-primary"
-            disabled={busy}
+            disabled={actionsLocked}
             onClick={() => void beginLink('connect')}
           >
             {busy ? 'Working…' : isConnecting ? 'Try again' : 'Connect'}
@@ -221,7 +245,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           <button
             type="button"
             className="btn-primary"
-            disabled={busy}
+            disabled={actionsLocked}
             onClick={() => void beginLink('reconnect')}
           >
             {busy ? 'Working…' : 'Reconnect'}
@@ -231,7 +255,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           <button
             type="button"
             className="btn-secondary"
-            disabled={busy}
+            disabled={actionsLocked}
             onClick={() => void beginLink('reconnect')}
           >
             {busy ? 'Working…' : 'Reconnect'}
@@ -241,7 +265,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           <button
             type="button"
             className="btn-danger"
-            disabled={busy}
+            disabled={actionsLocked}
             onClick={() => setConfirmOpen(true)}
           >
             Disconnect
@@ -254,7 +278,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
             token={linkToken}
             onSuccess={onSuccess}
             onExit={onLinkExit}
-            disabled={busy}
+            disabled={actionsLocked}
           />
         )}
 
@@ -262,7 +286,7 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
           <button
             type="button"
             className="btn-secondary"
-            disabled={busy}
+            disabled={actionsLocked}
             onClick={onCancel}
           >
             Cancel
@@ -270,14 +294,27 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
         )}
       </div>
 
+      {!awaitingLink && isConnected && (
+        <div className="integration-card-actions integration-card-actions-extract">
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={!isConnected || extractBusy || busy}
+            onClick={() => void onExtract()}
+          >
+            {extractBusy ? 'Extracting…' : 'Extract'}
+          </button>
+        </div>
+      )}
+
       <ConfirmDialog
         open={confirmOpen}
         title="Disconnect Plaid?"
         message="This removes the stored bank link for your organization. You can connect again later."
         confirmLabel="Disconnect"
-        busy={busy}
+        busy={actionsLocked}
         onCancel={() => {
-          if (!busy) setConfirmOpen(false)
+          if (!actionsLocked) setConfirmOpen(false)
         }}
         onConfirm={() => void onDisconnectConfirmed()}
       />

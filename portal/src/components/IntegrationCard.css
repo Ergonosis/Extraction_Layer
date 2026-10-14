@@ -107,6 +107,12 @@
   padding-top: 4px;
 }
 
+.integration-card-actions-extract {
+  padding-top: 12px;
+  margin-top: 4px;
+  border-top: 1px solid #e2e8f0;
+}
+
 .integration-card-actions button {
   border-radius: 8px;
   padding: 8px 14px;
