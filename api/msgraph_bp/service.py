@@ -24,8 +24,8 @@ SESSION_SCOPES_KEY = "msgraph_requested_scopes"
 SESSION_DESIRED_ACTIVE_KEY = "msgraph_desired_active"
 SESSION_INCREMENTAL_KEY = "msgraph_incremental"
 
-# Always request offline_access so we receive a refresh token.
-OFFLINE_ACCESS = "offline_access"
+# MSAL adds openid/profile/offline_access itself — do not pass them in scopes.
+_MSAL_RESERVED_SCOPES = frozenset({"openid", "profile", "offline_access"})
 
 
 class MsGraphServiceError(Exception):
@@ -66,7 +66,7 @@ def _parse_scope_list(requested: object) -> list[str]:
     else:
         raise MsGraphServiceError("scopes must be a list of strings", status_code=400)
 
-    items = [s for s in items if s != OFFLINE_ACCESS]
+    items = [s for s in items if s not in _MSAL_RESERVED_SCOPES]
     unsupported = [s for s in items if s not in allow]
     if unsupported:
         raise MsGraphServiceError(
@@ -94,7 +94,8 @@ def validate_permission_scopes(requested: object) -> list[str]:
 
 
 def _scopes_for_msal(delegated: list[str]) -> list[str]:
-    return list(delegated) + [OFFLINE_ACCESS]
+    """Graph delegated scopes only; MSAL injects offline_access for refresh tokens."""
+    return [s for s in delegated if s not in _MSAL_RESERVED_SCOPES]
 
 
 def start_connect(

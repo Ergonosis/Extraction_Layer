@@ -28,7 +28,7 @@ def authorization_url(state: str) -> str:
     """Return the Microsoft authorize URL for the auth-code flow."""
     app = build_msal_app()
     return app.get_authorization_request_url(
-        scopes=list(current_app.config.get("MS_SSO_SCOPES") or ["openid", "profile", "email"]),
+        scopes=list(current_app.config.get("MS_SSO_SCOPES") or ["email"]),
         state=state,
         redirect_uri=current_app.config["MS_REDIRECT_URI"],
     )
@@ -39,7 +39,7 @@ def exchange_auth_code(code: str) -> dict:
     app = build_msal_app()
     result = app.acquire_token_by_authorization_code(
         code=code,
-        scopes=list(current_app.config.get("MS_SSO_SCOPES") or ["openid", "profile", "email"]),
+        scopes=list(current_app.config.get("MS_SSO_SCOPES") or ["email"]),
         redirect_uri=current_app.config["MS_REDIRECT_URI"],
     )
     return result or {}
