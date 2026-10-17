@@ -1,0 +1,33 @@
+.connections-page {
+  max-width: 960px;
+}
+
+.connections-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.connections-header p {
+  margin: 0 0 28px;
+  color: #64748b;
+  font-size: 1rem;
+}
+
+.connections-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 20px;
+}
+
+.connections-loading,
+.connections-error {
+  margin: 0;
+  color: #64748b;
+}
+
+.connections-error {
+  color: #b91c1c;
+  margin-bottom: 16px;
+}

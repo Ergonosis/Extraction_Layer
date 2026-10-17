@@ -1,0 +1,47 @@
+.permission-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.permission-selector-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: #64748b;
+  line-height: 1.4;
+}
+
+.permission-selector-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 8px;
+}
+
+.permission-selector-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  font-size: 0.875rem;
+  color: #475569;
+  cursor: pointer;
+}
+
+.permission-selector-item input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+}
+
+.permission-selector-label {
+  flex: 1;
+}
+
+.permission-selector-info {
+  margin: 0;
+  font-size: 0.875rem;
+  color: #1d4ed8;
+}

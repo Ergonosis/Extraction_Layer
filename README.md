@@ -237,6 +237,20 @@ Each email is returned as a dictionary:
 
 ---
 
+## Portal multi-organization tenancy
+
+The React portal + Flask `api/` package use **shared-schema** tenancy (one Postgres / Cloud SQL database; every row tagged with `organization_id`). Microsoft Entra `tid` maps to an `organizations` row; Plaid and Graph connections stay per-user inside that org. See **SECURITY.md → Multi-organization tenancy** for isolation rules, Redis multi-instance notes, and GCP cost tiers. Verify with:
+
+```bash
+python scripts/verify_portal_tenancy.py
+```
+
+## Deploy to GCP
+
+Production deploy scripts (Dockerfile, Cloud Build, Cloud Run migrate/deploy) are documented in **[docs/deploy-gcp.md](docs/deploy-gcp.md)**. The container serves the API and the built SPA on the same origin so session cookies work.
+
+---
+
 ## Notes
 
 - Use `PLAID_ENV=sandbox` for local development and testing; switch to `development` or `production` with matching credentials for live data.

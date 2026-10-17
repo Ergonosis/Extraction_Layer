@@ -1,0 +1,18 @@
+.dev-auth-banner {
+  flex-shrink: 0;
+  z-index: 1000;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 16px;
+  background: #ea580c;
+  color: #fff7ed;
+  font-size: 0.875rem;
+  font-weight: 500;
+  text-align: center;
+  border-bottom: 2px solid #9a3412;
+}
+
+.dev-auth-banner strong {
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
