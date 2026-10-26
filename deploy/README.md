@@ -1,10 +1,13 @@
 # Deploy tooling
 
-See **[../docs/deploy-gcp.md](../docs/deploy-gcp.md)** for the full GCP production path.
+See **[../docs/gcp-launch-runbook.md](../docs/gcp-launch-runbook.md)** for the
+frontend-first GCP production path.
 
 Quick pointers:
 
-- `cloudbuild.yaml` — build/push image
-- `migrate-cloud-run-job.sh` — `flask db upgrade`
-- `deploy-cloud-run.sh` — Cloud Run service
-- `env.deploy.example` — copy to `env.deploy.local` (gitignored)
+- `build-portal-local.sh` / `.ps1` — build the Firebase static bundle
+- `migrate-cloud-run-job.sh` — future `flask db upgrade` Cloud Run Job
+- `env.migrate.example` — future migration Job variables
+
+Backend image build and Cloud Run Service replacement are owned by
+`.github/workflows/deploy-backend.yaml` and `infra/portal/cloudrun.yaml`.

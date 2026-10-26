@@ -1,9 +1,17 @@
-venv/
 .env
+__pycache__/
+venv/
 portal/.env.local
 deploy/env.deploy.local
-__pycache__/
+deploy/env.migrate.local
 plaid/records/
 records/
-portal/node_modules/
-portal/dist/
+
+# Coverage reports and data
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+.firebase/
+firebase-debug.log*

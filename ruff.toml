@@ -1,0 +1,16 @@
+line-length = 120
+unsafe-fixes = true
+
+
+[format]
+quote-style = "single"
+indent-style = "space"
+docstring-code-format = true
+skip-magic-trailing-comma = true
+line-ending = "lf"
+
+[lint.isort]
+split-on-trailing-comma = false
+
+[lint]
+ignore = ["BLE001", "S110", "B017", "F541"]

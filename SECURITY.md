@@ -5,7 +5,7 @@
 PostgreSQL must be running. Then from the repo root:
 
 ```bash
-set FLASK_APP=api.app:create_app
+set FLASK_APP=src.api.app:create_app
 flask db upgrade
 ```
 
@@ -29,11 +29,11 @@ The portal uses **shared-schema** tenancy: one Cloud SQL / Postgres database, ev
 
 ### Mapping
 
-| Concept | Storage |
-|---|---|
-| Microsoft Entra tenant (`tid` claim) | `organizations.ms_tenant_id` (unique) |
-| Signed-in person (`oid` claim) | `users` row scoped by `(organization_id, ms_oid)` |
-| Plaid / MS Graph connection | `integrations` row per `(user_id, provider)`, also stamped with `organization_id` |
+| Concept                              | Storage                                                                           |
+| ------------------------------------ | --------------------------------------------------------------------------------- |
+| Microsoft Entra tenant (`tid` claim) | `organizations.ms_tenant_id` (unique)                                             |
+| Signed-in person (`oid` claim)       | `users` row scoped by `(organization_id, ms_oid)`                                 |
+| Plaid / MS Graph connection          | `integrations` row per `(user_id, provider)`, also stamped with `organization_id` |
 
 SSO (`complete_sso_login`) finds or creates the org from `tid`, then finds or creates the user in that org. The session stores only `user_id` and `organization_id`. Portal SSO authority is `https://login.microsoftonline.com/organizations` — **not** a single `MS_TENANT_ID`. Optional `MS_TENANT_ALLOWLIST` restricts which Entra tenants may sign in.
 
@@ -49,11 +49,11 @@ SSO (`complete_sso_login`) finds or creates the org from `tid`, then finds or cr
 
 Rough monthly GCP cost for the portal stack (Cloud Run + Cloud SQL + Redis/Memorystore). **Plaid usage is billed separately.**
 
-| Tier | Approx. GCP / month | Shape |
-|---|---|---|
-| Small | ~$40–90 | Single Cloud Run service, small Cloud SQL, Redis/Memorystore |
-| Medium | ~$150–400 | Multi-instance Cloud Run, larger SQL, Memorystore |
-| Large | ~$500–2,000 | HA Cloud SQL, more Redis capacity, autoscaling |
+| Tier   | Approx. GCP / month | Shape                                                        |
+| ------ | ------------------- | ------------------------------------------------------------ |
+| Small  | ~$40–90             | Single Cloud Run service, small Cloud SQL, Redis/Memorystore |
+| Medium | ~$150–400           | Multi-instance Cloud Run, larger SQL, Memorystore            |
+| Large  | ~$500–2,000         | HA Cloud SQL, more Redis capacity, autoscaling               |
 
 Production checklist for multi-instance scale:
 
@@ -63,12 +63,15 @@ Production checklist for multi-instance scale:
 - [ ] `MS_TENANT_ALLOWLIST` set if you must restrict which companies can sign in
 
 ```bash
-python scripts/verify_portal_tenancy.py
+uv run python -m tests.integration.verify_portal_tenancy
 ```
 
 ### GCP deploy scripts (issue #48)
 
-Build/push/migrate/deploy tooling lives under `deploy/` (Dockerfile at repo root). See **[docs/deploy-gcp.md](docs/deploy-gcp.md)** for Cloud Run + Secret Manager steps.
+Backend build and Cloud Run Service deployment are defined in
+`.github/workflows/deploy-backend.yaml` and `infra/portal/cloudrun.yaml`.
+Database migration remains under `deploy/`. See
+**[docs/gcp-launch-runbook.md](docs/gcp-launch-runbook.md)**.
 
 ## Production GCP hardening (issue #33)
 
@@ -76,31 +79,31 @@ App-layer cookies/CSRF/rate limits/Fernet are covered by #20 / #28. This section
 
 ### Private Redis + Cloud SQL
 
-| Resource | Production pattern |
-|---|---|
-| Cloud SQL | Private IP **or** Unix socket via Cloud SQL connector: `postgresql://USER:PASS@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE` |
-| Memorystore | Private VPC IP, e.g. `redis://10.x.x.x:6379/0` (enable AUTH when available); **not** a public `:6379` |
-| Cloud Run | Serverless VPC Access connector + `--vpc-egress=private-ranges-only` so the service can reach SQL/Redis |
-| Secrets | `USE_GCP_SECRETS=true`, runtime SA with `roles/secretmanager.secretAccessor` + `roles/cloudsql.client` only |
+| Resource    | Production pattern                                                                                                         |
+| ----------- | -------------------------------------------------------------------------------------------------------------------------- |
+| Cloud SQL   | Private IP **or** Unix socket via Cloud SQL connector: `postgresql://USER:PASS@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE` |
+| Memorystore | Private VPC IP, e.g. `redis://10.x.x.x:6379/0` (enable AUTH when available); **not** a public `:6379`                      |
+| Cloud Run   | Serverless VPC Access connector + `--vpc-egress=private-ranges-only` so the service can reach SQL/Redis                    |
+| Secrets     | `USE_GCP_SECRETS=true`, runtime SA with `roles/secretmanager.secretAccessor` + `roles/cloudsql.client` only                |
 
-TLS terminates at Cloud Run / HTTPS load balancer. Production boot requires `SESSION_COOKIE_SECURE=true` (see `api/app.py`). Never set `ENABLE_DEV_LOGIN` in production.
+TLS terminates at Cloud Run / HTTPS load balancer. Production boot requires `SESSION_COOKIE_SECURE=true` (see `src/api/app.py`). Never set `ENABLE_DEV_LOGIN` in production.
 
 ### Content-Security-Policy (SPA)
 
-Because the SPA is served from the same Cloud Run origin (`PORTAL_STATIC_DIR`), Flask sets CSP on every response in `api/middleware.py`.
+Because the SPA is served from the same Cloud Run origin (`PORTAL_STATIC_DIR`), Flask sets CSP on every response in `src/api/middleware.py`.
 
-| `CSP_MODE` | Behavior |
-|---|---|
-| *(empty)* | `enforce` when `FLASK_ENV=production`, else `report-only` |
-| `report-only` | `Content-Security-Policy-Report-Only` (safe to test) |
-| `enforce` | `Content-Security-Policy` |
-| `off` | No CSP header |
+| `CSP_MODE`    | Behavior                                                  |
+| ------------- | --------------------------------------------------------- |
+| _(empty)_     | `enforce` when `FLASK_ENV=production`, else `report-only` |
+| `report-only` | `Content-Security-Policy-Report-Only` (safe to test)      |
+| `enforce`     | `Content-Security-Policy`                                 |
+| `off`         | No CSP header                                             |
 
-Default policy (`api/csp.py`) allows `'self'` plus Plaid Link and Microsoft login/Graph hosts. Override with `CSP_POLICY` only if you know you need a different allowlist. After changing CSP, re-test Connect flows for Plaid and Entra.
+Default policy (`src/api/csp.py`) allows `'self'` plus Plaid Link and Microsoft login/Graph hosts. Override with `CSP_POLICY` only if you know you need a different allowlist. After changing CSP, re-test Connect flows for Plaid and Entra.
 
 ### Audit logging
 
-Structured JSON lines go to logger `portal.audit` (stdout → Cloud Logging on Cloud Run). Helper: `api/audit.py` → `audit(event, user_id=..., organization_id=..., **extra)`.
+Structured JSON lines go to logger `portal.audit` (stdout → Cloud Logging on Cloud Run). Helper: `src/api/audit.py` → `audit(event, user_id=..., organization_id=..., **extra)`.
 
 Events include: `auth.login.success` / `auth.login.failure` / `auth.logout`, `org.created` / `user.created`, `plaid.connect.*` / `plaid.disconnect` / `plaid.export`, `msgraph.connect.*` / `msgraph.disconnect` / `msgraph.permissions.*` / `msgraph.export`.
 
@@ -124,7 +127,7 @@ Also watch Cloud Monitoring for Cloud SQL / Memorystore connectivity errors and 
 **Decision (issue #33):** defer Cloud Armor until a public multi-tenant launch. App-level `flask-limiter` remains the primary rate control. Revisit Armor (edge bot/IP rules) when exposing a custom domain to the open internet; document any policy alongside this section.
 
 ```bash
-python scripts/verify_portal_security_audit.py
+uv run python -m tests.integration.verify_portal_security_audit
 ```
 
 ## CSRF
@@ -166,10 +169,10 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 # Dry-run (no DB writes): current key decrypts, new key re-encrypts in memory
 set FERNET_KEY=<current-key>
 set FERNET_NEW_KEY=<new-key>
-python scripts/rotate_fernet_keys.py --dry-run
+uv run python -m scripts.rotate_fernet_keys --dry-run
 
 # Apply re-encryption to all Plaid + MS Graph credential blobs
-python scripts/rotate_fernet_keys.py --apply
+uv run python -m scripts.rotate_fernet_keys --apply
 ```
 
 ### Production cutover
@@ -204,7 +207,7 @@ SSO uses authority `https://login.microsoftonline.com/organizations` and scopes 
 Verify without a real Entra redirect:
 
 ```bash
-python scripts/verify_portal_auth.py
+uv run python -m tests.integration.verify_portal_auth
 ```
 
 ## Plaid Link lifecycle (`/api/plaid/*`)
@@ -215,7 +218,7 @@ python scripts/verify_portal_auth.py
 - Local/sandbox: set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, and `FERNET_KEY`.
 
 ```bash
-python scripts/verify_portal_plaid.py
+uv run python -m tests.integration.verify_portal_plaid
 ```
 
 ## MS Graph lifecycle (`/api/msgraph/*`)
@@ -227,7 +230,7 @@ python scripts/verify_portal_plaid.py
 - Register `MS_GRAPH_REDIRECT_URI` (default `http://localhost:5175/api/msgraph/callback`) in the Entra app.
 
 ```bash
-python scripts/verify_portal_msgraph.py
+uv run python -m tests.integration.verify_portal_msgraph
 ```
 
 ### Permission selector (issue #26)
@@ -236,17 +239,17 @@ python scripts/verify_portal_msgraph.py
 - `PUT /permissions` (10/min, CSRF): toggle `is_active` for already-granted scopes; if new scopes are needed, returns `consent_required` + `redirect_url` for incremental consent.
 
 ```bash
-python scripts/verify_portal_msgraph_permissions.py
+uv run python -m tests.integration.verify_portal_msgraph_permissions
 ```
 
 ### Data export wiring (issue #27)
 
-- `POST /api/plaid/export` (10/min, CSRF): decrypts the Plaid access token in memory, calls legacy `plaid/extractors/plaid_ext.fetch_and_store`, returns file path / item metadata only.
-- `POST /api/msgraph/export` (10/min, CSRF): decrypts the Graph access token in memory, calls `microsoft/ms_graph_email_client.py` (profile / mail / calendar). Request `include_*` flags are a wish list; pulls are gated by `scopes_granted` ∩ `is_active`.
+- `POST /api/plaid/export` (10/min, CSRF): decrypts the Plaid access token in memory, calls `src.plaid.extractors.plaid_ext.fetch_and_store`, returns file path / item metadata only.
+- `POST /api/msgraph/export` (10/min, CSRF): decrypts the Graph access token in memory, calls `src/microsoft/ms_graph_email_client.py` (profile / mail / calendar). Request `include_*` flags are a wish list; pulls are gated by `scopes_granted` ∩ `is_active`.
 - Plaintext tokens must never appear in responses, logs, or export JSON.
 
 ```bash
-python scripts/verify_portal_exports.py
+uv run python -m tests.integration.verify_portal_exports
 ```
 
 ## LOCAL ONLY — auth bypass (never in production)
@@ -277,62 +280,62 @@ Then the login page shows **Continue as local dev user**, which calls `POST /api
 
 ## Security hardening audit (issue #28)
 
-Verified locally with `python scripts/verify_portal_security_audit.py` (and prior issue scripts). Gaps closed in this issue are called out below.
+Verified locally with `uv run python -m tests.integration.verify_portal_security_audit` (and prior issue scripts). Gaps closed in this issue are called out below.
 
 ### Cookies / sessions
 
-| Check | Status |
-|---|---|
-| `HttpOnly`, `SameSite=Lax` | Verified (config) |
-| `Secure` in production | Enforced by production boot guard + default when `FLASK_ENV=production` |
-| 8h session lifetime → `/auth/me` 401 when expired | Lifetime configured 8h; logout / missing session returns 401 |
-| Session ID changes after `/auth/callback` | `regenerate_session()` on SSO + dev-login |
-| Logout destroys server-side session | `destroy_session()` deletes Redis key + rotates sid |
+| Check                                             | Status                                                                  |
+| ------------------------------------------------- | ----------------------------------------------------------------------- |
+| `HttpOnly`, `SameSite=Lax`                        | Verified (config)                                                       |
+| `Secure` in production                            | Enforced by production boot guard + default when `FLASK_ENV=production` |
+| 8h session lifetime → `/auth/me` 401 when expired | Lifetime configured 8h; logout / missing session returns 401            |
+| Session ID changes after `/auth/callback`         | `regenerate_session()` on SSO + dev-login                               |
+| Logout destroys server-side session               | `destroy_session()` deletes Redis key + rotates sid                     |
 
 ### CSRF
 
-| Check | Status |
-|---|---|
-| POST/PUT/DELETE/PATCH require `X-CSRF-Token` → 403 | Verified |
-| GET does not require CSRF | Verified |
-| Axios interceptor sends CSRF on mutations | `portal/src/api/client.ts` |
+| Check                                              | Status                     |
+| -------------------------------------------------- | -------------------------- |
+| POST/PUT/DELETE/PATCH require `X-CSRF-Token` → 403 | Verified                   |
+| GET does not require CSRF                          | Verified                   |
+| Axios interceptor sends CSRF on mutations          | `portal/src/api/client.ts` |
 
 ### Rate limits
 
-| Endpoint class | Limit |
-|---|---|
-| Default / reads | 30/min |
-| `/auth/login` | 10/min |
-| Auth/Graph callbacks, Plaid exchange/disconnect | 5/min |
-| Mutations (connect, export, permissions, logout) | 10/min |
-| Plaid/MS Graph status | 15/min |
-| Burst → 429 | Verified |
+| Endpoint class                                   | Limit    |
+| ------------------------------------------------ | -------- |
+| Default / reads                                  | 30/min   |
+| `/auth/login`                                    | 10/min   |
+| Auth/Graph callbacks, Plaid exchange/disconnect  | 5/min    |
+| Mutations (connect, export, permissions, logout) | 10/min   |
+| Plaid/MS Graph status                            | 15/min   |
+| Burst → 429                                      | Verified |
 
 ### Encryption / secrets
 
-| Check | Status |
-|---|---|
-| No endpoint returns tokens/secrets/keys | Audited (`/auth/me`, integrations, exports) |
+| Check                                       | Status                                                                                                      |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| No endpoint returns tokens/secrets/keys     | Audited (`/auth/me`, integrations, exports)                                                                 |
 | Production loads secrets via Secret Manager | Boot refuses production without `USE_GCP_SECRETS`, real `SECRET_KEY`, `FERNET_KEY`, `SESSION_COOKIE_SECURE` |
-| Fernet rotation dry-run | `scripts/rotate_fernet_keys.py` + `FERNET_PREVIOUS_KEYS` |
+| Fernet rotation dry-run                     | `scripts/rotate_fernet_keys.py` + `FERNET_PREVIOUS_KEYS`                                                    |
 
 ### Response security
 
-| Check | Status |
-|---|---|
-| HSTS, nosniff, DENY frame, Referrer-Policy | Middleware |
-| Errors never leak stack/SQL/paths/keys | Generic JSON 500 handler; DEBUG/PROPAGATE off |
-| CORS restricted to portal origins | `CORS_ORIGINS` (default localhost:5175) |
+| Check                                      | Status                                        |
+| ------------------------------------------ | --------------------------------------------- |
+| HSTS, nosniff, DENY frame, Referrer-Policy | Middleware                                    |
+| Errors never leak stack/SQL/paths/keys     | Generic JSON 500 handler; DEBUG/PROPAGATE off |
+| CORS restricted to portal origins          | `CORS_ORIGINS` (default localhost:5175)       |
 
 ### Input validation
 
-| Check | Status |
-|---|---|
-| Reject unexpected JSON fields → 400 | Plaid/MS Graph mutation bodies allowlisted |
-| Enums / lengths / structure | Existing scope allowlists + public_token checks |
-| OAuth `state` single-use | SSO + MS Graph callbacks `session.pop` state before exchange |
+| Check                               | Status                                                       |
+| ----------------------------------- | ------------------------------------------------------------ |
+| Reject unexpected JSON fields → 400 | Plaid/MS Graph mutation bodies allowlisted                   |
+| Enums / lengths / structure         | Existing scope allowlists + public_token checks              |
+| OAuth `state` single-use            | SSO + MS Graph callbacks `session.pop` state before exchange |
 
 ```bash
-python scripts/verify_portal_security.py
-python scripts/verify_portal_security_audit.py
+uv run python -m tests.integration.verify_portal_security
+uv run python -m tests.integration.verify_portal_security_audit
 ```

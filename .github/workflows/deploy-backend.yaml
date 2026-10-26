@@ -1,0 +1,217 @@
+name: Deploy Extraction Backend
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/deploy-backend.yaml'
+      - '.dockerignore'
+      - '.env.dev'
+      - '.python-version'
+      - 'infra/portal/**'
+      - 'migrations/**'
+      - 'pyproject.toml'
+      - 'src/**'
+      - 'tests/**'
+      - 'uv.lock'
+      - 'uv.toml'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    permissions:
+      contents: 'read' # Required to checkout the code
+      id-token: 'write' # Required to request the JWT / OIDC token
+
+    env:
+      GCP_PROJECT_ID: # assigned at runtime
+      GCP_REGION: # assigned at runtime
+      PYTHON_VERSION: # assigned at runtime
+      SLACK_MEMBER_ID: # assigned at runtime
+      CLOUD_RUN_FILE_PATH: # assigned at runtime
+      SHORT_DOCKER_IMAGE_NAME: # assigned at runtime
+      DOCKERFILE_PATH: # assigned at runtime
+      GIT_COMMIT_MSG: # assigned at runtime
+      CLOUD_RUN_RESOURCE: services
+      DOCKER_IMAGE_NAME: # assigned at runtime
+      INFRA_PATH: 'infra/portal'
+      ACTIONS_CACHE_SERVICE_V2: '1'
+      WORKLOAD_IDENTITY_PROVIDER: # assigned at runtime
+      SLACK_MEMBER_ID_MAPPING_JSON_PATH: '.github/workflows/slack-member-id-mapping.json'
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Resolve Slack Member ID
+        if: ${{ always() }}
+        run: |
+          username_hash=$(printf '%s' "${{ github.triggering_actor }}" | tr '[:upper:]' '[:lower:]' | sha256sum | cut -d ' ' -f1)
+          slack_member_id=$(jq -r --arg key "$username_hash" '.[$key] // empty' "${{ env.SLACK_MEMBER_ID_MAPPING_JSON_PATH }}")
+          [[ -z "$slack_member_id" ]] || echo "::add-mask::$slack_member_id"
+          echo "SLACK_MEMBER_ID=$slack_member_id" >> "$GITHUB_ENV"
+
+      - name: Load environment
+        run: grep -v '^#' .env.dev | grep -v '^[[:space:]]*$' >> "$GITHUB_ENV"
+
+      - name: Init other env vars
+        run: |
+          echo "CLOUD_RUN_FILE_PATH=${{ env.INFRA_PATH }}/cloudrun.yaml" >> "$GITHUB_ENV"
+          echo     "DOCKERFILE_PATH=${{ env.INFRA_PATH }}/Dockerfile"    >> "$GITHUB_ENV"
+          echo "SHORT_DOCKER_IMAGE_NAME=$(echo "${{ env.DOCKER_IMAGE_NAME }}" | cut -d'/' -f3-)" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_MSG=$(git log -1 --pretty=%s)" >> "$GITHUB_ENV"
+
+          test -n "$PORTAL_DOCKER_IMAGE_NAME"
+          echo "DOCKER_IMAGE_NAME=$PORTAL_DOCKER_IMAGE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Read Python version
+        run: echo "PYTHON_VERSION=$(tr -d '[:space:]' < .python-version)" >> "$GITHUB_ENV"
+
+      - name: Validate deployment vars
+        run: |
+          test -n "${{ env.GCP_PROJECT_ID }}"
+          test -n "${{ env.GCP_REGION }}"
+          test -n "${{ env.PYTHON_VERSION }}"
+          test -f "${{ env.CLOUD_RUN_FILE_PATH }}"
+          test -n "${{ env.DOCKER_IMAGE_NAME }}"
+          test -n "${{ env.SHORT_DOCKER_IMAGE_NAME }}"
+          test -f "${{ env.DOCKERFILE_PATH }}"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Verify dependency lock
+        run: uv lock --check
+
+      - name: Auth GitHub Actions with GCP
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+
+      - name: Auth Docker with GCP
+        run: |
+          set -o pipefail
+          gcloud auth print-access-token | docker login \
+            --username=oauth2accesstoken \
+            --password-stdin \
+            "${{ env.GCP_REGION }}-docker.pkg.dev"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          # Docker driver supports the gha cache backend without starting a separate BuildKit container.
+          driver: docker
+
+      - name: Build and push Docker image
+        id: docker_build
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE_PATH }}
+          push: true
+          tags: |
+            ${{ env.DOCKER_IMAGE_NAME }}:${{ github.sha }}
+            ${{ env.DOCKER_IMAGE_NAME }}:latest
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          build-args: |
+            PYTHON_VERSION=${{ env.PYTHON_VERSION }}
+          cache-from: type=gha,scope=${{ env.INFRA_PATH }}
+          cache-to: type=gha,scope=${{ env.INFRA_PATH }},compression=zstd,mode=min
+
+      - name: Validate image digest
+        run: |
+          case "${{ steps.docker_build.outputs.digest }}" in
+            sha256:*) ;;
+            *) echo "Invalid Buildx digest: ${{ steps.docker_build.outputs.digest }}" >&2; exit 1 ;;
+          esac
+
+      - name: Patch cloudrun.yaml with new image digest
+        uses: jacobtomlinson/gha-find-replace@v3
+        with:
+          find: ${{ env.DOCKER_IMAGE_NAME }}:latest
+          replace: '${{ env.DOCKER_IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}'
+          include: ${{ env.CLOUD_RUN_FILE_PATH }}
+          regex: false
+
+      - name: Verify patched cloudrun.yaml
+        run: test "$(grep -Fc "${{ env.DOCKER_IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}" "${{ env.CLOUD_RUN_FILE_PATH }}")" -eq 1
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run "${{ env.CLOUD_RUN_RESOURCE }}" replace "${{ env.CLOUD_RUN_FILE_PATH }}" \
+            --async \
+            --region="${{ env.GCP_REGION }}" \
+            --project="${{ env.GCP_PROJECT_ID }}"
+
+      - name: Notify Slack
+        if: ${{ always() }}
+        uses: slackapi/slack-github-action@v4
+        with:
+          errors: 'true'
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} ${{ env.SHORT_DOCKER_IMAGE_NAME }} deployment ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} *[${{ job.status }}]* — *${{ env.SHORT_DOCKER_IMAGE_NAME }}*"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Event:* ${{ github.event_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:* `${{ github.ref_name }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Image Digest:* <https://${{ env.DOCKER_IMAGE_NAME }}|${{ steps.docker_build.outputs.digest }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|#${{ github.run_id }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Message:* ${{ env.GIT_COMMIT_MSG }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "👤 *Triggered by:* <${{ github.server_url }}/${{ github.triggering_actor }}|${{ github.triggering_actor }}> ${{ env.SLACK_MEMBER_ID != '' && format('<@{0}>', env.SLACK_MEMBER_ID) || '(No Slack Member ID)' }}"
+                    }
+                  ]
+                },
+                { "type": "divider" }
+              ]
+            }

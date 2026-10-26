@@ -12,10 +12,7 @@ export let getNpxCmd = () => {
         bin += '.cmd'
       }
 
-      const result = spawnSync(bin, ['--version'], {
-        encoding: 'utf-8',
-        shell: true,
-      })
+      const result = spawnSync(bin, ['--version'], { encoding: 'utf-8', shell: true })
 
       if (result.status === 0) {
         detectedCmd = npxCmd
@@ -36,4 +33,10 @@ export let getNpxCmd = () => {
 export default {
   '**/*.{,[mc]}[jt]s': `${getNpxCmd()} prettier --write`,
   '**/*.{md,yaml}': `${getNpxCmd()} prettier --write`,
+  '{pyproject.toml,uv.lock}': () => 'uv lock --check',
+  '**/*.py': [
+    'uv run --locked ruff check --fix',
+    'uv run --locked ruff format',
+    // () => 'uv run --locked python -m pytest tests/'
+  ],
 }

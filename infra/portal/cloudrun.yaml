@@ -1,0 +1,79 @@
+apiVersion: serving.knative.dev/v1
+kind: Service
+metadata:
+  name: extraction-portal
+  annotations:
+    run.googleapis.com/ingress: all
+spec:
+  template:
+    metadata:
+      annotations:
+        autoscaling.knative.dev/minScale: '0'
+        # Disposable SQLite test mode must never create independent DB copies.
+        autoscaling.knative.dev/maxScale: '1'
+        run.googleapis.com/cpu-throttling: 'true'
+        run.googleapis.com/execution-environment: gen2
+        run.googleapis.com/startup-cpu-boost: 'true'
+    spec:
+      serviceAccountName: extraction-portal-run@auspicious-silo-492102-j6.iam.gserviceaccount.com
+      containerConcurrency: 8
+      timeoutSeconds: 60
+      containers:
+        # GitHub Actions replaces this mutable placeholder with an immutable digest.
+        - image: us-central1-docker.pkg.dev/auspicious-silo-492102-j6/portal/extraction-portal:latest
+          ports:
+            - name: http1
+              containerPort: 8080
+          env:
+            - name: FLASK_ENV
+              value: production
+            - name: USE_GCP_SECRETS
+              value: 'true'
+            - name: GCP_PROJECT_ID
+              value: auspicious-silo-492102-j6
+            - name: ENABLE_DEV_LOGIN
+              value: 'false'
+            - name: AUTO_MIGRATE_ON_START
+              value: 'true'
+            - name: SESSION_COOKIE_SECURE
+              value: 'true'
+            - name: SESSION_COOKIE_NAME
+              value: __session
+            - name: PORTAL_URL
+              value: https://ergonosis-extraction-portal.web.app
+            - name: PORTAL_POST_LOGIN_PATH
+              value: /connections
+            - name: CORS_ORIGINS
+              value: https://ergonosis-extraction-portal.web.app
+            - name: MS_REDIRECT_URI
+              value: https://ergonosis-extraction-portal.web.app/api/auth/callback
+            - name: MS_GRAPH_REDIRECT_URI
+              value: https://ergonosis-extraction-portal.web.app/api/msgraph/callback
+            - name: MS_AUTHORITY
+              value: https://login.microsoftonline.com/organizations
+            - name: PLAID_ENV
+              value: sandbox
+            # Disposable test mode. Data is lost whenever this instance is replaced.
+            - name: DATABASE_URL
+              value: sqlite:////tmp/portal-test.db
+            - name: REDIS_URL
+              value: ''
+          resources:
+            limits:
+              cpu: '1'
+              memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 2
+            failureThreshold: 12
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 5

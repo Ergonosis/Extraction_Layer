@@ -12,28 +12,22 @@ All data is normalized and persisted as local JSON for downstream processing and
 ## Project Structure
 
 ```text
-Data-Aggregation-Unifying-Layer/
+Data-Extraction-Layer/
 ├── README.md
-├── requirements.txt              # Core dependencies (Plaid + Flask)
-├── plaid/
-│   ├── .env                      # gitignored — Plaid credentials (see Plaid › Environment Variables)
-│   ├── apps.py                   # Flask app: Plaid Link flow + DataExporter class
-│   ├── index.html                # Plaid Link frontend UI
-│   ├── run_script.py             # Entry point for manual date-range exports
-│   ├── extractors/
-│   │   ├── __init__.py
-│   │   └── plaid_ext.py          # Plaid API wrapper: pagination, filtering, JSON output
-│   └── records/                  # Auto-created output directory (configurable via RECORDS_DIR)
-│       ├── tokens.json
-│       ├── items.json
-│       └── <export_files>.json
-└── microsoft/
-    ├── .env                      # gitignored — Microsoft Graph credentials (see Microsoft › Environment Variables)
-    ├── ms_graph_email_client.py  # Microsoft Graph API email client
-    └── usage.py                  # Runnable example
+├── pyproject.toml                # Project and direct dependency declarations
+├── uv.lock                       # Reproducible complete dependency graph
+├── src/
+│   ├── api/                      # Portal Flask API
+│   ├── plaid/                    # Plaid app, extractor, and manual export entrypoint
+│   └── microsoft/                # Microsoft Graph client and example
+├── tests/
+│   ├── test_*.py                 # Default unit test suite
+│   └── integration/              # Service-backed verification modules
+├── scripts/                      # Operational commands
+└── migrations/                   # Flask-Migrate / Alembic migrations
 ```
 
-> Each module has its **own** `.env` file in its **own** directory. Do not place either `.env` at the project root.
+Local configuration is read from the gitignored root `.env` file.
 
 ---
 
@@ -41,40 +35,18 @@ Data-Aggregation-Unifying-Layer/
 
 ### Prerequisites
 
-- Python 3.10+
+- Python 3.15
+- [uv](https://docs.astral.sh/uv/)
 - **Plaid**: Client ID and Secret from the [Plaid Dashboard](https://dashboard.plaid.com)
-- **Microsoft** *(optional)*: Azure App Registration with `Mail.Read` application permission granted by a tenant admin
+- **Microsoft** _(optional)_: Azure App Registration with `Mail.Read` application permission granted by a tenant admin
 
-### 1. Create and activate a virtual environment
-
-macOS/Linux:
+### Install dependencies
 
 ```bash
-python -m venv venv
-source venv/bin/activate
+uv sync --locked
 ```
 
-Windows PowerShell:
-
-```powershell
-python -m venv venv
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-.\venv\Scripts\Activate.ps1
-```
-
-### 2. Install dependencies
-
-For Plaid:
-
-```bash
-pip install -r requirements.txt
-```
-
-For Microsoft Graph *(additional packages required)*:
-
-```bash
-pip install requests msal beautifulsoup4 lxml python-dotenv
-```
+`uv` creates `.venv` and installs the exact versions recorded in `uv.lock`.
 
 ---
 
@@ -82,7 +54,7 @@ pip install requests msal beautifulsoup4 lxml python-dotenv
 
 ### Environment Variables
 
-Create a `.env` file inside the `plaid/` directory:
+Add the Plaid variables to the root `.env` file:
 
 ```env
 PLAID_CLIENT_ID=your_client_id
@@ -95,12 +67,12 @@ RECORDS_DIR=records
 
 ### Architecture
 
-| File | Responsibility |
-|------|----------------|
-| `plaid/apps.py` | Flask server, Plaid Link token lifecycle, token storage, `DataExporter` class |
-| `plaid/extractors/plaid_ext.py` | Plaid API wrapper: paginated transaction fetch, account filtering, JSON output |
-| `plaid/run_script.py` | Standalone entry point for date-range exports |
-| `plaid/records/` | Persisted output: `tokens.json`, `items.json`, export files |
+| File                                | Responsibility                                                                 |
+| ----------------------------------- | ------------------------------------------------------------------------------ |
+| `src/plaid/apps.py`                 | Flask server, Plaid Link token lifecycle, token storage, `DataExporter` class  |
+| `src/plaid/extractors/plaid_ext.py` | Plaid API wrapper: paginated transaction fetch, account filtering, JSON output |
+| `src/plaid/run_script.py`           | Standalone entry point for date-range exports                                  |
+| `records/`                          | Persisted output: `tokens.json`, `items.json`, export files                    |
 
 ### Runtime Flow
 
@@ -114,8 +86,7 @@ RECORDS_DIR=records
 ### Running the Plaid connect app
 
 ```bash
-cd plaid
-python apps.py
+uv run python -m src.plaid.apps
 ```
 
 Open `http://localhost:5000` and connect an institution.
@@ -125,28 +96,27 @@ Open `http://localhost:5000` and connect an institution.
 Call `run_data_export()` in `run_script.py` with your desired parameters and run:
 
 ```bash
-cd plaid
-python run_script.py
+uv run python -m src.plaid.run_script
 ```
 
 **Available parameters:**
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `start_date` | `date` | Export start date |
-| `end_date` | `date` | Export end date (defaults to today) |
-| `bank_filter` | `str` | Filter by institution name or item ID |
-| `account_filter` | `list[str]` | Filter by account name, type, or mask |
-| `output_dir` | `str` | Output directory (defaults to `RECORDS_DIR`) |
+| Parameter        | Type        | Description                                  |
+| ---------------- | ----------- | -------------------------------------------- |
+| `start_date`     | `date`      | Export start date                            |
+| `end_date`       | `date`      | Export end date (defaults to today)          |
+| `bank_filter`    | `str`       | Filter by institution name or item ID        |
+| `account_filter` | `list[str]` | Filter by account name, type, or mask        |
+| `output_dir`     | `str`       | Output directory (defaults to `RECORDS_DIR`) |
 
 ### Output Files
 
-All files are written to `plaid/records/` (configurable via `RECORDS_DIR`):
+All files are written to `records/` by default (configurable via `RECORDS_DIR`):
 
-| File | Description |
-|------|-------------|
-| `tokens.json` | `item_id` → `access_token` mapping |
-| `items.json` | Linked institution metadata |
+| File                                    | Description                                                                            |
+| --------------------------------------- | -------------------------------------------------------------------------------------- |
+| `tokens.json`                           | `item_id` → `access_token` mapping                                                     |
+| `items.json`                            | Linked institution metadata                                                            |
 | `range_<start>_to_<end>_<item_id>.json` | Transaction export — generated by both initial connect and manual `run_script.py` runs |
 
 ---
@@ -157,7 +127,7 @@ Retrieves emails from a Microsoft 365 mailbox using **client credentials (servic
 
 ### Environment Variables
 
-Create a `.env` file inside the `microsoft/` directory:
+Add the Microsoft variables to the root `.env` file:
 
 ```env
 MS_CLIENT_ID=your_azure_client_id
@@ -168,22 +138,21 @@ USER_EMAIL=user@company.com
 
 ### Architecture
 
-| File | Responsibility |
-|------|----------------|
-| `microsoft/ms_graph_email_client.py` | `MicrosoftGraphEmailClient` class and `fetch_user_emails()` convenience wrapper |
-| `microsoft/usage.py` | Minimal runnable example |
+| File                                     | Responsibility                                                                  |
+| ---------------------------------------- | ------------------------------------------------------------------------------- |
+| `src/microsoft/ms_graph_email_client.py` | `MicrosoftGraphEmailClient` class and `fetch_user_emails()` convenience wrapper |
+| `src/microsoft/usage.py`                 | Minimal runnable example                                                        |
 
 ### Running the Microsoft module
 
 ```bash
-cd microsoft
-python usage.py
+uv run python -m src.microsoft.usage
 ```
 
 ### Usage
 
 ```python
-from ms_graph_email_client import fetch_user_emails
+from src.microsoft.ms_graph_email_client import fetch_user_emails
 from dotenv import load_dotenv
 import os
 
@@ -207,18 +176,18 @@ else:
 
 **`fetch_user_emails` parameters:**
 
-| Parameter | Type | Required | Description |
-|-----------|------|----------|-------------|
-| `client_id` | `str` | Yes | Azure App Registration client ID |
-| `client_secret` | `str` | Yes | Azure app client secret |
-| `tenant_id` | `str` | Yes | Azure tenant ID |
-| `user_email` | `str` | Yes | Mailbox address to query |
-| `start_datetime` | `str` | Yes | ISO 8601 UTC start (e.g. `"2026-01-01T00:00:00Z"`) |
-| `end_datetime` | `str` | Yes | ISO 8601 UTC end |
-| `strip_html` | `bool` | No | `True` returns clean text, `False` returns raw HTML. Defaults to `True` |
-| `select_fields` | `list[str]` | No | Graph API fields to retrieve. Defaults to `subject`, `from`, `toRecipients`, `receivedDateTime`, `body` |
-| `page_size` | `int` | No | Number of messages per page. Defaults to `50` |
-| `max_pages` | `int` | No | Maximum number of pages to fetch. Defaults to unlimited |
+| Parameter        | Type        | Required | Description                                                                                             |
+| ---------------- | ----------- | -------- | ------------------------------------------------------------------------------------------------------- |
+| `client_id`      | `str`       | Yes      | Azure App Registration client ID                                                                        |
+| `client_secret`  | `str`       | Yes      | Azure app client secret                                                                                 |
+| `tenant_id`      | `str`       | Yes      | Azure tenant ID                                                                                         |
+| `user_email`     | `str`       | Yes      | Mailbox address to query                                                                                |
+| `start_datetime` | `str`       | Yes      | ISO 8601 UTC start (e.g. `"2026-01-01T00:00:00Z"`)                                                      |
+| `end_datetime`   | `str`       | Yes      | ISO 8601 UTC end                                                                                        |
+| `strip_html`     | `bool`      | No       | `True` returns clean text, `False` returns raw HTML. Defaults to `True`                                 |
+| `select_fields`  | `list[str]` | No       | Graph API fields to retrieve. Defaults to `subject`, `from`, `toRecipients`, `receivedDateTime`, `body` |
+| `page_size`      | `int`       | No       | Number of messages per page. Defaults to `50`                                                           |
+| `max_pages`      | `int`       | No       | Maximum number of pages to fetch. Defaults to unlimited                                                 |
 
 ### Return Format
 
@@ -239,15 +208,18 @@ Each email is returned as a dictionary:
 
 ## Portal multi-organization tenancy
 
-The React portal + Flask `api/` package use **shared-schema** tenancy (one Postgres / Cloud SQL database; every row tagged with `organization_id`). Microsoft Entra `tid` maps to an `organizations` row; Plaid and Graph connections stay per-user inside that org. See **SECURITY.md → Multi-organization tenancy** for isolation rules, Redis multi-instance notes, and GCP cost tiers. Verify with:
+The React portal + Flask `src/api/` package use **shared-schema** tenancy (one Postgres / Cloud SQL database; every row tagged with `organization_id`). Microsoft Entra `tid` maps to an `organizations` row; Plaid and Graph connections stay per-user inside that org. See **SECURITY.md → Multi-organization tenancy** for isolation rules, Redis multi-instance notes, and GCP cost tiers. Verify with:
 
 ```bash
-python scripts/verify_portal_tenancy.py
+uv run python -m tests.integration.verify_portal_tenancy
 ```
 
 ## Deploy to GCP
 
-Production deploy scripts (Dockerfile, Cloud Build, Cloud Run migrate/deploy) are documented in **[docs/deploy-gcp.md](docs/deploy-gcp.md)**. The container serves the API and the built SPA on the same origin so session cookies work.
+Production deployment uses GitHub Actions with keyless GCP authentication and
+an immutable Cloud Run image digest. See
+**[docs/gcp-launch-runbook.md](docs/gcp-launch-runbook.md)**. Firebase serves the
+SPA; the Cloud Run image contains only the API.
 
 ---
 
@@ -258,4 +230,4 @@ Production deploy scripts (Dockerfile, Cloud Build, Cloud Run migrate/deploy) ar
 - The Microsoft module requires an Azure App Registration with the `Mail.Read` **application** permission (not delegated) granted by a tenant admin.
 - Plaid's initial account connect automatically exports the full available transaction history.
 - All exports are append-safe — each run generates a new timestamped file; no existing files are overwritten.
-- Each module reads its `.env` from its own directory. Place `plaid/.env` for Plaid and `microsoft/.env` for Microsoft Graph.
+- Local commands read the root `.env`; never commit credentials.
