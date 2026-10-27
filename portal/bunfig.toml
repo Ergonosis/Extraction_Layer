@@ -1,0 +1,72 @@
+[fmt]
+sortImports = true
+sortTailwindcss = true
+sortPackageJson = true
+jsdoc = true
+
+[install]
+linker = "isolated"
+hoist = false
+
+globalStore = true
+
+
+
+
+
+
+
+[lint]
+typeAware = true
+
+[lint.categories]
+correctness = "error"
+pedantic = "warn"
+perf = "warn"
+style = "warn"
+suspicious = "warn"
+
+[lint.rules]
+"react-hooks/purity" = "error"
+"react-hooks/immutability" = "error"
+"react-hooks/refs" = "error"
+"react-hooks/set-state-in-render" = "error"
+"react-hooks/rule-suppression" = "error"
+"react-hooks/unsupported-syntax" = "error"
+
+
+"react/button-has-type" = "error"
+"react/jsx-no-constructed-context-values" = "error"
+"react/no-array-index-key" = "warn"
+"react/hook-use-state" = "warn"
+"react/no-danger" = "warn"
+
+
+"@typescript-eslint/consistent-type-imports" = "error"
+"@typescript-eslint/no-import-type-side-effects" = "error"
+"@typescript-eslint/no-floating-promises" = "error"
+"@typescript-eslint/no-explicit-any" = "warn"
+"@typescript-eslint/no-non-null-assertion" = "warn"
+"@typescript-eslint/no-dynamic-delete" = "warn"
+
+
+"no-eval" = "error"
+"no-implied-eval" = "error"
+"no-alert" = "error"
+"no-console" = ["warn", { allow = ["warn", "error"] }]
+"unicorn/no-abusive-eslint-disable" = "error"
+"require-atomic-updates" = "error"
+
+
+"unicorn/prefer-modern-dom-apis" = "warn"
+"unicorn/prefer-dom-node-append" = "warn"
+"unicorn/prefer-dom-node-remove" = "warn"
+"unicorn/prefer-dom-node-text-content" = "warn"
+"unicorn/prefer-query-selector" = "warn"
+"unicorn/prefer-blob-reading-methods" = "warn"
+"unicorn/prefer-keyboard-event-key" = "warn"
+
+"unicorn/prefer-structured-clone" = "warn"
+"unicorn/prefer-type-error" = "warn"
+"unicorn/prefer-math-min-max" = "warn"
+"unicorn/prefer-code-point" = "warn"

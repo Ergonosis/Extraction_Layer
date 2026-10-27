@@ -31,8 +31,7 @@ export let getNpxCmd = () => {
 }
 
 export default {
-  '**/*.{,[mc]}[jt]s': `${getNpxCmd()} prettier --write`,
-  '**/*.{md,yaml}': `${getNpxCmd()} prettier --write`,
+  '**/*': () => 'bun fmt --check --staged',
   '{pyproject.toml,uv.lock}': () => 'uv lock --check',
   '**/*.py': [
     'uv run --locked ruff check --fix',
