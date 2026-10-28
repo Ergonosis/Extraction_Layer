@@ -11,11 +11,6 @@ hoist = false
 globalStore = true
 
 
-
-
-
-
-
 [lint]
 typeAware = true
 
@@ -43,6 +38,7 @@ suspicious = "warn"
 
 
 "@typescript-eslint/consistent-type-imports" = "error"
+"@typescript-eslint/consistent-type-definitions" = "off"
 "@typescript-eslint/no-import-type-side-effects" = "error"
 "@typescript-eslint/no-floating-promises" = "error"
 "@typescript-eslint/no-explicit-any" = "warn"
@@ -56,6 +52,16 @@ suspicious = "warn"
 "no-console" = ["warn", { allow = ["warn", "error"] }]
 "unicorn/no-abusive-eslint-disable" = "error"
 "require-atomic-updates" = "error"
+"no-inline-comments" = "off"
+"import/no-anonymous-default-export" = [
+  "warn",
+  { allowObject = true, allowArray = true, allowLiteral = true },
+]
+"sort-keys" = [
+  "warn",
+  "asc",
+  { natural = true, minKeys = 5, allowLineSeparatedGroups = true },
+]
 
 
 "unicorn/prefer-modern-dom-apis" = "warn"
@@ -70,3 +76,5 @@ suspicious = "warn"
 "unicorn/prefer-type-error" = "warn"
 "unicorn/prefer-math-min-max" = "warn"
 "unicorn/prefer-code-point" = "warn"
+
+"jsx-a11y/prefer-tag-over-role" = "warn"

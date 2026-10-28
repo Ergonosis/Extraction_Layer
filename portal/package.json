@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "lint:onlyerr": "bun lint --quiet",
     "lint:fix": "bun lint --fix --fix-suggestions",
     "lint:fix:danger": "bun run lint:fix --fix-dangerously",
     "preview": "vite preview",
