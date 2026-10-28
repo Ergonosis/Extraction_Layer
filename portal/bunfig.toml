@@ -12,6 +12,7 @@ globalStore = true
 
 
 [lint]
+plugins = ["eslint-plugin-react-compiler"]
 typeAware = true
 
 [lint.categories]
@@ -22,29 +23,38 @@ style = "warn"
 suspicious = "warn"
 
 [lint.rules]
+"react-compiler/react-compiler" = "error"
+
 "react-hooks/purity" = "error"
 "react-hooks/immutability" = "error"
 "react-hooks/refs" = "error"
 "react-hooks/set-state-in-render" = "error"
 "react-hooks/rule-suppression" = "error"
 "react-hooks/unsupported-syntax" = "error"
-
+"react-hooks/rules-of-hooks" = "error"
 
 "react/button-has-type" = "error"
 "react/jsx-no-constructed-context-values" = "error"
 "react/no-array-index-key" = "warn"
 "react/hook-use-state" = "warn"
 "react/no-danger" = "warn"
+"react/jsx-no-target-blank" = "error"
 
+"bun/axios-no-unbounded-requests" = "error"
+"bun/jsx-no-forbidden-nesting" = "error"
+"bun/react-no-latest-value-ref" = "error"
+"bun/react-prefer-updater-function" = "error"
+"bun/react-no-local-render-helpers" = "error"
 
 "@typescript-eslint/consistent-type-imports" = "error"
 "@typescript-eslint/consistent-type-definitions" = "off"
 "@typescript-eslint/no-import-type-side-effects" = "error"
 "@typescript-eslint/no-floating-promises" = "error"
+"@typescript-eslint/no-misused-promises" = "error"
+"@typescript-eslint/switch-exhaustiveness-check" = "error"
 "@typescript-eslint/no-explicit-any" = "warn"
 "@typescript-eslint/no-non-null-assertion" = "warn"
 "@typescript-eslint/no-dynamic-delete" = "warn"
-
 
 "no-eval" = "error"
 "no-implied-eval" = "error"
@@ -53,6 +63,7 @@ suspicious = "warn"
 "unicorn/no-abusive-eslint-disable" = "error"
 "require-atomic-updates" = "error"
 "no-inline-comments" = "off"
+"import/no-cycle" = "error"
 "import/no-anonymous-default-export" = [
   "warn",
   { allowObject = true, allowArray = true, allowLiteral = true },
@@ -63,7 +74,6 @@ suspicious = "warn"
   { natural = true, minKeys = 5, allowLineSeparatedGroups = true },
 ]
 
-
 "unicorn/prefer-modern-dom-apis" = "warn"
 "unicorn/prefer-dom-node-append" = "warn"
 "unicorn/prefer-dom-node-remove" = "warn"
@@ -71,7 +81,6 @@ suspicious = "warn"
 "unicorn/prefer-query-selector" = "warn"
 "unicorn/prefer-blob-reading-methods" = "warn"
 "unicorn/prefer-keyboard-event-key" = "warn"
-
 "unicorn/prefer-structured-clone" = "warn"
 "unicorn/prefer-type-error" = "warn"
 "unicorn/prefer-math-min-max" = "warn"
