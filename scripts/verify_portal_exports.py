@@ -3,7 +3,8 @@
 Usage (from repo root):
   python scripts/verify_portal_exports.py
 
-Requires Postgres (5434) + Redis (6379). External Plaid/Graph HTTP is mocked.
+Requires Postgres (5434). External Plaid/Graph HTTP is mocked.
+Sessions/rate limits use PostgreSQL by default (issue #56).
 """
 
 from __future__ import annotations
@@ -163,11 +164,19 @@ def main() -> int:
         sess["organization_id"] = org_id
     csrf = _csrf(client)
 
-    step("POST /api/plaid/export calls legacy fetch_and_store")
+    step("POST /api/plaid/export returns JSON payload (no local path)")
     with patch("api.plaid_bp.service.get_plaid_client", return_value=MagicMock()):
+        def _fake_fetch_and_store(*_args, **kwargs):
+            out = Path(kwargs["output_dir"]) / "verify_export.json"
+            out.write_text(
+                json.dumps({"transactions": [{"id": "t1"}], "accounts": []}),
+                encoding="utf-8",
+            )
+            return str(out)
+
         with patch(
             "api.plaid_bp.service.load_fetch_and_store",
-            return_value=MagicMock(return_value="records/verify_export.json"),
+            return_value=MagicMock(side_effect=_fake_fetch_and_store),
         ) as loader:
             resp = client.post(
                 "/api/plaid/export",
@@ -178,18 +187,19 @@ def main() -> int:
         fail(f"plaid export expected 200, got {resp.status_code}: {resp.get_json()}")
     data = resp.get_json()
     _assert_no_secrets(data)
-    if data.get("file") != "records/verify_export.json":
-        fail(f"unexpected file payload: {data}")
+    if data.get("filename") != "verify_export.json":
+        fail(f"unexpected filename payload: {data}")
+    if "file" in data:
+        fail("export must not return a container-local file path")
+    export_body = data.get("export") or {}
+    if not isinstance(export_body, dict) or not export_body.get("transactions"):
+        fail(f"expected export JSON body, got: {data}")
     if data.get("item_id") != "item-verify-1":
         fail(f"unexpected item_id: {data}")
-    call_kwargs = loader.return_value.call_args.kwargs
-    if "access-secret-plaid" in json.dumps(call_kwargs, default=str):
-        # token is positional arg — check positional
-        pass
     args = loader.return_value.call_args.args
     if len(args) < 2 or args[1] != "access-secret-plaid":
         fail("fetch_and_store was not called with decrypted access token")
-    ok("Plaid export wired to fetch_and_store")
+    ok("Plaid export returns in-response JSON")
 
     step("MS Graph export: profile allowed; mail/calendar skipped by is_active")
     mock_client = MagicMock()

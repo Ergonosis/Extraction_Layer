@@ -210,11 +210,20 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
     if (!isConnected || extractBusy) return
     setExtractBusy(true)
     try {
-      const { file } = await plaidExport({ window_days: 90 })
-      const basename = file.replace(/\\/g, '/').split('/').pop() ?? file
+      const { filename, export: payload } = await plaidExport({ window_days: 90 })
+      const txCount =
+        payload &&
+        typeof payload === 'object' &&
+        Array.isArray((payload as { transactions?: unknown }).transactions)
+          ? (payload as { transactions: unknown[] }).transactions.length
+          : undefined
+      const detail =
+        typeof txCount === 'number'
+          ? `${filename} (${txCount} transactions)`
+          : filename
       pushToast({
         kind: 'success',
-        message: `Plaid extract saved: ${basename}`,
+        message: `Plaid extract ready: ${detail}`,
       })
     } catch (err) {
       pushToast({
