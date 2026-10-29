@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import logging
+import tempfile
 from datetime import date, datetime, timezone
+from pathlib import Path
 
 from flask import current_app
 from plaid.exceptions import ApiException
@@ -358,22 +360,26 @@ def run_export(
         if parsed_window <= 0:
             raise PlaidServiceError("window_days must be greater than 0")
 
-    output_dir = current_app.config.get("PLAID_RECORDS_DIR") or "records"
-
+    # Write under a request-scoped temp dir so multi-instance Cloud Run does not
+    # depend on sticky local disk paths. Response returns JSON payload, not a path.
     try:
         client = get_plaid_client()
         access_token = decrypt_token(cred.access_token_enc)
         fetch_and_store = load_fetch_and_store()
-        file_path = fetch_and_store(
-            client,
-            access_token,
-            item_id=cred.item_id,
-            start_date=parsed_start,
-            end_date=parsed_end,
-            window_days=parsed_window,
-            account_filter=account_filter,
-            output_dir=output_dir,
-        )
+        with tempfile.TemporaryDirectory(prefix="plaid-export-") as tmp_dir:
+            file_path = fetch_and_store(
+                client,
+                access_token,
+                item_id=cred.item_id,
+                start_date=parsed_start,
+                end_date=parsed_end,
+                window_days=parsed_window,
+                account_filter=account_filter,
+                output_dir=tmp_dir,
+            )
+            path = Path(file_path)
+            export_payload = json.loads(path.read_text(encoding="utf-8"))
+            filename = path.name
     except RuntimeError as exc:
         raise PlaidServiceError(str(exc), status_code=503) from exc
     except ValueError as exc:
@@ -399,9 +405,11 @@ def run_export(
         user_id=user_id,
         organization_id=organization_id,
         item_id=cred.item_id,
+        filename=filename,
     )
     return {
-        "file": file_path,
+        "filename": filename,
         "item_id": cred.item_id,
+        "export": export_payload,
         "integration": serialize_integration(integration),
     }

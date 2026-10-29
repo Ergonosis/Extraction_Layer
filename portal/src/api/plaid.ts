@@ -40,8 +40,9 @@ export async function plaidStatus(): Promise<PlaidIntegrationResponse> {
 }
 
 export type PlaidExportResponse = {
-  file: string
+  filename: string
   item_id: string
+  export: unknown
   integration: Integration
 }
 

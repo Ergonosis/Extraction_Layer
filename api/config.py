@@ -56,8 +56,19 @@ class Config:
         "postgresql://portal:portal@localhost:5434/portal",
     )
 
-    # Dedicated portal Redis (Docker extraction-portal-redis). Used for sessions + rate limits.
-    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
+    # Optional Redis (fallback when SESSION_BACKEND/RATELIMIT_STORAGE_BACKEND=redis).
+    # Default empty: PostgreSQL sessions + rate limits (issue #56).
+    REDIS_URL = os.getenv("REDIS_URL", "")
+
+    # Session / rate-limit storage: sqlalchemy (default) or redis.
+    SESSION_BACKEND = os.getenv("SESSION_BACKEND", "sqlalchemy").strip().lower()
+    RATELIMIT_STORAGE_BACKEND = os.getenv(
+        "RATELIMIT_STORAGE_BACKEND", "sqlalchemy"
+    ).strip().lower()
+
+    # SQLAlchemy connection pool caps (multi-instance Cloud Run budget).
+    DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", "5"))
+    DB_MAX_OVERFLOW = int(os.getenv("DB_MAX_OVERFLOW", "5"))
 
     # Microsoft Entra ID — multi-tenant SSO (issue #21)
     # Authority uses /organizations so any work/school tenant can sign in.
@@ -123,8 +134,8 @@ class Config:
         if origin.strip()
     ]
 
-    # Production Cloud Run image: directory of `portal/dist` for same-origin SPA.
-    # Empty / missing = API-only (local `flask run` + Vite on :5175).
+    # Optional: serve SPA from this dir (legacy same-origin Cloud Run). Prefer Firebase Hosting.
+    # Empty = API-only (local Vite on :5175, or Firebase rewrite to Cloud Run).
     PORTAL_STATIC_DIR = os.getenv("PORTAL_STATIC_DIR", "")
 
     # Content-Security-Policy for SPA responses (issue #33).
@@ -134,8 +145,18 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_size": DB_POOL_SIZE,
+        "max_overflow": DB_MAX_OVERFLOW,
+    }
 
     # Session cookie hardening
+    # Firebase Hosting only forwards the special cookie name __session to Cloud Run.
+    SESSION_COOKIE_NAME = os.getenv(
+        "SESSION_COOKIE_NAME",
+        "__session" if FLASK_ENV == "production" else "session",
+    )
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = "Lax"
     # Secure cookies break plain http://localhost; enable in production (or set env).
@@ -146,8 +167,9 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
     SESSION_REFRESH_EACH_REQUEST = True
 
-    # flask-session (Redis-backed when REDIS_URL is set)
-    SESSION_TYPE = "redis"
+    # flask-session — default SQLAlchemy (shared across Cloud Run instances).
+    SESSION_TYPE = "sqlalchemy" if SESSION_BACKEND != "redis" else "redis"
+    SESSION_SQLALCHEMY_TABLE = "sessions"
     SESSION_PERMANENT = True
     SESSION_USE_SIGNER = True
     SESSION_KEY_PREFIX = "portal:session:"

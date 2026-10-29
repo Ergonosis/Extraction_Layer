@@ -49,6 +49,10 @@ def register_security_middleware(app: Flask) -> None:
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
+        # Identity / third-party data must not land in shared CDN caches.
+        if request.path.startswith("/api/") and "Cache-Control" not in response.headers:
+            response.headers["Cache-Control"] = "no-store"
+
         mode = resolve_csp_mode(
             app.config.get("CSP_MODE"),
             flask_env=str(app.config.get("FLASK_ENV") or ""),

@@ -110,16 +110,24 @@ def create_app(config_class=Config):
         supports_credentials=True,
     )
 
-    # Redis-backed server-side sessions when REDIS_URL is configured
-    redis_url = app.config.get("REDIS_URL") or ""
-    if redis_url:
-        import redis as redis_lib
-
-        app.config["SESSION_REDIS"] = redis_lib.from_url(redis_url)
-        Session(app)
-
     db.init_app(app)
     migrate.init_app(app, db)
+
+    # Server-side sessions: SQLAlchemy (default) or Redis fallback.
+    session_backend = (app.config.get("SESSION_BACKEND") or "sqlalchemy").strip().lower()
+    if session_backend == "redis":
+        redis_url = (app.config.get("REDIS_URL") or "").strip()
+        if not redis_url:
+            raise RuntimeError("REDIS_URL must be set when SESSION_BACKEND=redis")
+        import redis as redis_lib
+
+        app.config["SESSION_TYPE"] = "redis"
+        app.config["SESSION_REDIS"] = redis_lib.from_url(redis_url)
+    else:
+        app.config["SESSION_TYPE"] = "sqlalchemy"
+        app.config["SESSION_SQLALCHEMY"] = db
+    Session(app)
+
     init_limiter(app)
     register_security_middleware(app)
     _register_error_handlers(app)
