@@ -9,6 +9,27 @@ def _utcnow():
     return datetime.now(UTC)
 
 
+class PortalSession(db.Model):
+    """Flask-Session's schema, registered once; Alembic owns table creation."""
+
+    __tablename__ = 'sessions'
+    __table_args__ = (db.Index('ix_sessions_expiry', 'expiry'),)
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(db.String(255), unique=True)
+    data = db.Column(db.LargeBinary)
+    expiry = db.Column(db.DateTime)
+
+
+class RateLimitBucket(db.Model):
+    __tablename__ = 'rate_limit_buckets'
+    __table_args__ = (db.Index('ix_rate_limit_buckets_expires_at', 'expires_at'),)
+
+    key = db.Column(db.String(255), primary_key=True)
+    count = db.Column(db.Integer, nullable=False)
+    expires_at = db.Column(db.DateTime(timezone=True), nullable=False)
+
+
 class Organization(db.Model):
     __tablename__ = 'organizations'
 

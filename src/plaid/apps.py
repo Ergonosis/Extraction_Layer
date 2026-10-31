@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import UTC, date, datetime
+from datetime import date
 
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template_string, request
@@ -81,7 +81,7 @@ class DataExporter:
         tokens = load_tokens()
         metadata = load_item_metadata()
         output_dir = output_dir or get_records_dir()
-        end_date = end_date or datetime.now(UTC).date()
+        end_date = end_date or date.today()
         start_date = start_date or date(2000, 1, 1)
 
         selected_item_ids = []

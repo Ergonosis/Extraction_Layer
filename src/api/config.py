@@ -54,11 +54,12 @@ class Config:
     # Do not use 5432/5433 (other projects). Override with DATABASE_URL for Cloud SQL in production.
     DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://portal:portal@localhost:5434/portal')
 
-    # Dedicated portal Redis (Docker extraction-portal-redis). Used for sessions + rate limits.
-    REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
-
-    # Disposable SQLite test mode only. Cloud SQL migrations run as a separate Job.
-    AUTO_MIGRATE_ON_START = _env_bool('AUTO_MIGRATE_ON_START', False)
+    # Shared PostgreSQL state by default; Redis is an explicit fallback.
+    REDIS_URL = os.getenv('REDIS_URL', '')
+    SESSION_BACKEND = os.getenv('SESSION_BACKEND', 'sqlalchemy').strip().lower()
+    RATELIMIT_STORAGE_BACKEND = os.getenv('RATELIMIT_STORAGE_BACKEND', 'sqlalchemy').strip().lower()
+    DB_POOL_SIZE = int(os.getenv('DB_POOL_SIZE', '5'))
+    DB_MAX_OVERFLOW = int(os.getenv('DB_MAX_OVERFLOW', '5'))
 
     # Microsoft Entra ID — multi-tenant SSO (issue #21)
     # Authority uses /organizations so any work/school tenant can sign in.
@@ -120,10 +121,15 @@ class Config:
 
     SQLALCHEMY_DATABASE_URI = DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
+        'pool_pre_ping': True,
+        'pool_size': DB_POOL_SIZE,
+        'max_overflow': DB_MAX_OVERFLOW,
+    }
 
     # Session cookie hardening
     # Firebase Hosting only forwards this cookie name to Cloud Run.
-    SESSION_COOKIE_NAME = os.getenv('SESSION_COOKIE_NAME', 'session')
+    SESSION_COOKIE_NAME = os.getenv('SESSION_COOKIE_NAME', '__session' if FLASK_ENV == 'production' else 'session')
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SAMESITE = 'Lax'
     # Secure cookies break plain http://localhost; enable in production (or set env).
@@ -131,8 +137,9 @@ class Config:
     PERMANENT_SESSION_LIFETIME = timedelta(hours=8)
     SESSION_REFRESH_EACH_REQUEST = True
 
-    # flask-session (Redis-backed when REDIS_URL is set)
-    SESSION_TYPE = 'redis'
+    # Shared sessions; schema creation is handled by the migration Job.
+    SESSION_TYPE = 'redis' if SESSION_BACKEND == 'redis' else 'sqlalchemy'
+    SESSION_SQLALCHEMY_TABLE = 'sessions'
     SESSION_PERMANENT = True
     SESSION_USE_SIGNER = True
     SESSION_KEY_PREFIX = 'portal:session:'

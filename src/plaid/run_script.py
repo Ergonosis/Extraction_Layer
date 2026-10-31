@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import date
 
 from src.plaid.apps import DataExporter
 from src.plaid.paths import get_records_dir
@@ -25,7 +25,7 @@ def run_data_export(
         List[Dict]: List of results with file paths and metadata.
     """
     output_dir = output_dir or get_records_dir()
-    end_date = end_date or datetime.now(UTC).date()
+    end_date = end_date or date.today()
 
     print(f'--- Starting Data Export from {start_date} to {end_date} ---')
 

@@ -3,7 +3,7 @@
 Usage (from repo root):
   uv run python -m tests.integration.verify_portal_security_audit
 
-Requires Postgres + Redis. External IdP/Plaid calls are not required.
+Requires Postgres; Redis only for the explicit Redis backend. External IdP/Plaid calls are not required.
 """
 
 from __future__ import annotations

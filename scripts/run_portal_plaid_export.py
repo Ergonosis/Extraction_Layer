@@ -1,7 +1,7 @@
 """Run a real Plaid export for the local portal user and show the JSON file.
 
 Prerequisites (repo root):
-  - Postgres + Redis running (defaults in src/api/config.py)
+  - Postgres running; Redis only for the explicit Redis backend
   - Root `.env` with ENABLE_DEV_LOGIN=true, FERNET_KEY, PLAID_* sandbox keys
   - You already connected Plaid in the portal as the local dev user
     (Connections → Connect → sandbox Link, e.g. user_good / pass_good)
@@ -171,18 +171,21 @@ def main() -> int:
             print('Hint: status may be reauth_required — reconnect Plaid in the portal.', file=sys.stderr)
         return 1
 
-    file_path = payload.get('file')
+    filename = payload.get('filename') or 'plaid_export.json'
     item_id = payload.get('item_id')
+    export_body = payload.get('export')
     print(f'Export OK. item_id={item_id}')
-    print(f'API returned file path: {file_path}')
+    print(f'API returned filename: {filename}')
 
-    if not file_path:
-        print('No file path in response.', file=sys.stderr)
+    if not isinstance(export_body, dict):
+        print('No export JSON body in response.', file=sys.stderr)
         return 1
 
-    path = Path(file_path)
-    if not path.is_absolute():
-        path = (REPO_ROOT / path).resolve()
+    out_dir = REPO_ROOT / 'records'
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / Path(filename).name
+    path.write_text(json.dumps(export_body, indent=2), encoding='utf-8')
+    print(f'Wrote local copy: {path}')
 
     _preview_export(path, max_tx=args.max_tx)
 

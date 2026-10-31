@@ -11,17 +11,22 @@ flask db upgrade
 
 Use `DATABASE_URL` in `.env` if needed. Local default is `postgresql://portal:portal@localhost:5434/portal` (Docker `extraction-portal-postgres`). Do not use ports 5432/5433. Production uses Cloud SQL.
 
-## Redis (sessions + rate limits)
+## Shared sessions and rate limits
 
-Local default: Docker container `extraction-portal-redis` on host port **6379**.
+PostgreSQL is the default for both `SESSION_BACKEND=sqlalchemy` and
+`RATELIMIT_STORAGE_BACKEND=sqlalchemy`. The migration Job creates `sessions`
+and `rate_limit_buckets` before API instances start. Sessions use one fixed
+model and do not create tables at application startup. Login rotation and
+logout delete the old server-side session; deletion failures are not hidden.
 
-```bash
-docker run -d --name extraction-portal-redis -p 6379:6379 redis:7-alpine
-```
+Rate limits retain the existing fixed-window quotas and use atomic PostgreSQL
+upserts with database time. Their engine shares the application's connection
+pool. Cross-instance correctness and Redis equivalence still need real database
+tests before first launch; mock tests do not prove SQL atomicity.
 
-`REDIS_URL` defaults to `redis://localhost:6379/0`. Flask-Session and flask-limiter both use this Redis. Production should point `REDIS_URL` at Memorystore (or equivalent), not a laptop container.
-
-**Scale note:** multiple Cloud Run instances require shared Redis sessions. Without Redis, sticky sessions alone will not keep logins consistent across instances.
+Redis remains an explicit fallback: select `redis` for the relevant backend and
+provide `REDIS_URL`. Never expose Redis publicly or silently use `memory://`.
+Production Firebase cookies use `SESSION_COOKIE_NAME=__session`.
 
 ## Multi-organization tenancy (issue #30)
 
@@ -47,7 +52,7 @@ SSO (`complete_sso_login`) finds or creates the org from `tid`, then finds or cr
 
 ### GCP cost tiers (planning)
 
-Rough monthly GCP cost for the portal stack (Cloud Run + Cloud SQL + Redis/Memorystore). **Plaid usage is billed separately.**
+Historical estimates below describe the previous Redis/Memorystore stack, not quotes for the new Firebase + Cloud SQL deployment. **Plaid usage is billed separately.**
 
 | Tier   | Approx. GCP / month | Shape                                                        |
 | ------ | ------------------- | ------------------------------------------------------------ |
@@ -57,8 +62,10 @@ Rough monthly GCP cost for the portal stack (Cloud Run + Cloud SQL + Redis/Memor
 
 Production checklist for multi-instance scale:
 
-- [ ] `REDIS_URL` points at Memorystore (shared sessions + rate limits)
-- [ ] `DATABASE_URL` points at Cloud SQL (shared schema; org isolation in queries)
+- [ ] `DATABASE_URL` points at Cloud SQL (business data, sessions, rate limits)
+- [ ] Both backends use PostgreSQL, or an explicitly configured Redis fallback
+- [ ] `SESSION_COOKIE_NAME=__session` and API responses use `Cache-Control: no-store`
+- [ ] Connection pool caps fit the database budget
 - [ ] Secrets via Secret Manager (`USE_GCP_SECRETS=true`)
 - [ ] `MS_TENANT_ALLOWLIST` set if you must restrict which companies can sign in
 
@@ -77,20 +84,20 @@ Database migration remains under `deploy/`. See
 
 App-layer cookies/CSRF/rate limits/Fernet are covered by #20 / #28. This section covers **network posture, SPA CSP, audit logs, and monitoring**. Cloud Armor / WAF is **deferred** (see below).
 
-### Private Redis + Cloud SQL
+### Cloud SQL and optional private Redis
 
 | Resource    | Production pattern                                                                                                         |
 | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Cloud SQL   | Private IP **or** Unix socket via Cloud SQL connector: `postgresql://USER:PASS@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE` |
 | Memorystore | Private VPC IP, e.g. `redis://10.x.x.x:6379/0` (enable AUTH when available); **not** a public `:6379`                      |
-| Cloud Run   | Serverless VPC Access connector + `--vpc-egress=private-ranges-only` so the service can reach SQL/Redis                    |
+| Cloud Run   | Built-in Cloud SQL socket; private networking is needed only for private SQL or optional Redis |
 | Secrets     | `USE_GCP_SECRETS=true`, runtime SA with `roles/secretmanager.secretAccessor` + `roles/cloudsql.client` only                |
 
 TLS terminates at Cloud Run / HTTPS load balancer. Production boot requires `SESSION_COOKIE_SECURE=true` (see `src/api/app.py`). Never set `ENABLE_DEV_LOGIN` in production.
 
 ### Content-Security-Policy (SPA)
 
-Because the SPA is served from the same Cloud Run origin (`PORTAL_STATIC_DIR`), Flask sets CSP on every response in `src/api/middleware.py`.
+Firebase Hosting serves the SPA and sets its CSP and security headers. Flask also sets API security headers in `src/api/middleware.py`; private API responses always use `Cache-Control: no-store`.
 
 | `CSP_MODE`    | Behavior                                                  |
 | ------------- | --------------------------------------------------------- |
@@ -244,7 +251,7 @@ uv run python -m tests.integration.verify_portal_msgraph_permissions
 
 ### Data export wiring (issue #27)
 
-- `POST /api/plaid/export` (10/min, CSRF): decrypts the Plaid access token in memory, calls `src.plaid.extractors.plaid_ext.fetch_and_store`, returns file path / item metadata only.
+- `POST /api/plaid/export` (10/min, CSRF): decrypts the Plaid access token in memory, calls `src.plaid.extractors.plaid_ext.fetch_and_store`, returns `filename`, export JSON, item metadata, and integration status. Request-scoped temporary files are deleted before returning.
 - `POST /api/msgraph/export` (10/min, CSRF): decrypts the Graph access token in memory, calls `src/microsoft/ms_graph_email_client.py` (profile / mail / calendar). Request `include_*` flags are a wish list; pulls are gated by `scopes_granted` ∩ `is_active`.
 - Plaintext tokens must never appear in responses, logs, or export JSON.
 
@@ -290,7 +297,7 @@ Verified locally with `uv run python -m tests.integration.verify_portal_security
 | `Secure` in production                            | Enforced by production boot guard + default when `FLASK_ENV=production` |
 | 8h session lifetime → `/auth/me` 401 when expired | Lifetime configured 8h; logout / missing session returns 401            |
 | Session ID changes after `/auth/callback`         | `regenerate_session()` on SSO + dev-login                               |
-| Logout destroys server-side session               | `destroy_session()` deletes Redis key + rotates sid                     |
+| Logout destroys server-side session               | `destroy_session()` deletes the PostgreSQL/Redis record + rotates sid                     |
 
 ### CSRF
 

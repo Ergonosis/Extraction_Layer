@@ -10,6 +10,7 @@ on:
       - '.env.dev'
       - '.python-version'
       - 'infra/portal/**'
+      - 'deploy/**'
       - 'migrations/**'
       - 'pyproject.toml'
       - 'src/**'
@@ -25,7 +26,7 @@ concurrency:
 jobs:
   build_and_deploy:
     runs-on: ubuntu-26.04
-    timeout-minutes: 10
+    timeout-minutes: 30
 
     permissions:
       contents: 'read' # Required to checkout the code
@@ -43,6 +44,10 @@ jobs:
       CLOUD_RUN_RESOURCE: services
       DOCKER_IMAGE_NAME: # assigned at runtime
       INFRA_PATH: 'infra/portal'
+      CLOUD_SQL_INSTANCE: ${{ vars.CLOUD_SQL_INSTANCE }}
+      DATABASE_URL_SECRET: ${{ vars.DATABASE_URL_SECRET }}
+      MS_CLIENT_ID: ${{ vars.MS_CLIENT_ID }}
+      PLAID_CLIENT_ID: ${{ vars.PLAID_CLIENT_ID }}
       ACTIONS_CACHE_SERVICE_V2: '1'
       WORKLOAD_IDENTITY_PROVIDER: # assigned at runtime
       SLACK_MEMBER_ID_MAPPING_JSON_PATH: '.github/workflows/slack-member-id-mapping.json'
@@ -68,11 +73,10 @@ jobs:
         run: |
           echo "CLOUD_RUN_FILE_PATH=${{ env.INFRA_PATH }}/cloudrun.yaml" >> "$GITHUB_ENV"
           echo     "DOCKERFILE_PATH=${{ env.INFRA_PATH }}/Dockerfile"    >> "$GITHUB_ENV"
-          echo "SHORT_DOCKER_IMAGE_NAME=$(echo "${{ env.DOCKER_IMAGE_NAME }}" | cut -d'/' -f3-)" >> "$GITHUB_ENV"
-          echo "GIT_COMMIT_MSG=$(git log -1 --pretty=%s)" >> "$GITHUB_ENV"
-
           test -n "$PORTAL_DOCKER_IMAGE_NAME"
-          echo "DOCKER_IMAGE_NAME=$PORTAL_DOCKER_IMAGE_NAME" >> "$GITHUB_OUTPUT"
+          echo "DOCKER_IMAGE_NAME=$PORTAL_DOCKER_IMAGE_NAME" >> "$GITHUB_ENV"
+          echo "SHORT_DOCKER_IMAGE_NAME=$(echo "$PORTAL_DOCKER_IMAGE_NAME" | cut -d'/' -f3-)" >> "$GITHUB_ENV"
+          echo "GIT_COMMIT_MSG=$(git log -1 --pretty=%s)" >> "$GITHUB_ENV"
 
       - name: Read Python version
         run: echo "PYTHON_VERSION=$(tr -d '[:space:]' < .python-version)" >> "$GITHUB_ENV"
@@ -86,6 +90,9 @@ jobs:
           test -n "${{ env.DOCKER_IMAGE_NAME }}"
           test -n "${{ env.SHORT_DOCKER_IMAGE_NAME }}"
           test -f "${{ env.DOCKERFILE_PATH }}"
+          test -n "$CLOUD_SQL_INSTANCE"
+          test -n "$DATABASE_URL_SECRET"
+          test -n "$MS_CLIENT_ID"
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v10.3.0
@@ -98,6 +105,23 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+
+      - name: Check Cloud SQL and secrets before building
+        run: bash deploy/check-cloud-sql-ready.sh
+
+      - name: Patch Cloud SQL configuration
+        run: |
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ['CLOUD_RUN_FILE_PATH'])
+          content = path.read_text()
+          for key in ('CLOUD_SQL_INSTANCE', 'DATABASE_URL_SECRET', 'MS_CLIENT_ID', 'PLAID_CLIENT_ID'):
+              token = key + '_PLACEHOLDER'
+              assert content.count(token) == 1, token
+              content = content.replace(token, os.environ.get(key, ''))
+          path.write_text(content)
+          PY
 
       - name: Auth Docker with GCP
         run: |
@@ -149,12 +173,47 @@ jobs:
       - name: Verify patched cloudrun.yaml
         run: test "$(grep -Fc "${{ env.DOCKER_IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}" "${{ env.CLOUD_RUN_FILE_PATH }}")" -eq 1
 
+      - name: Create schema with the API image digest
+        env:
+          REGION: ${{ env.GCP_REGION }}
+          SERVICE_ACCOUNT: ${{ env.GCP_SERVICE_ACC_NAME }}
+          IMAGE: ${{ env.DOCKER_IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}
+        run: bash deploy/migrate-cloud-run-job.sh
+
       - name: Deploy to Cloud Run
         run: |
           gcloud run "${{ env.CLOUD_RUN_RESOURCE }}" replace "${{ env.CLOUD_RUN_FILE_PATH }}" \
-            --async \
             --region="${{ env.GCP_REGION }}" \
             --project="${{ env.GCP_PROJECT_ID }}"
+
+      - name: Verify the Ready revision and health
+        env:
+          EXPECTED_IMAGE: ${{ env.DOCKER_IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          SERVICE="$PORTAL_GCP_CLOUD_RUN_SERVICE"
+          read -r CREATED READY < <(gcloud run services describe "$SERVICE" \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
+            --format='value(status.latestCreatedRevisionName,status.latestReadyRevisionName)')
+          test -n "$READY"
+          test "$CREATED" = "$READY"
+          ACTUAL_IMAGE=$(gcloud run revisions describe "$READY" \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format='value(spec.containers[0].image)')
+          test "$ACTUAL_IMAGE" = "$EXPECTED_IMAGE"
+          gcloud run services add-iam-policy-binding "$SERVICE" \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" \
+            --member=allUsers --role=roles/run.invoker --quiet
+          URL=$(gcloud run services describe "$SERVICE" \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format='value(status.url)')
+          curl --fail --show-error --silent "$URL/api/health" > /tmp/portal-health.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          health = json.loads(Path('/tmp/portal-health.json').read_text())
+          assert health['status'] == 'ok'
+          assert health['flask_env'] == 'production'
+          assert health['dev_login_enabled'] is False
+          PY
 
       - name: Notify Slack
         if: ${{ always() }}

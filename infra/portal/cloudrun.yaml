@@ -9,8 +9,8 @@ spec:
     metadata:
       annotations:
         autoscaling.knative.dev/minScale: '0'
-        # Disposable SQLite test mode must never create independent DB copies.
-        autoscaling.knative.dev/maxScale: '1'
+        autoscaling.knative.dev/maxScale: '10'
+        run.googleapis.com/cloudsql-instances: CLOUD_SQL_INSTANCE_PLACEHOLDER
         run.googleapis.com/cpu-throttling: 'true'
         run.googleapis.com/execution-environment: gen2
         run.googleapis.com/startup-cpu-boost: 'true'
@@ -33,8 +33,6 @@ spec:
               value: auspicious-silo-492102-j6
             - name: ENABLE_DEV_LOGIN
               value: 'false'
-            - name: AUTO_MIGRATE_ON_START
-              value: 'true'
             - name: SESSION_COOKIE_SECURE
               value: 'true'
             - name: SESSION_COOKIE_NAME
@@ -53,9 +51,23 @@ spec:
               value: https://login.microsoftonline.com/organizations
             - name: PLAID_ENV
               value: sandbox
-            # Disposable test mode. Data is lost whenever this instance is replaced.
             - name: DATABASE_URL
-              value: sqlite:////tmp/portal-test.db
+              valueFrom:
+                secretKeyRef:
+                  name: 'DATABASE_URL_SECRET_PLACEHOLDER'
+                  key: latest
+            - name: SESSION_BACKEND
+              value: sqlalchemy
+            - name: RATELIMIT_STORAGE_BACKEND
+              value: sqlalchemy
+            - name: DB_POOL_SIZE
+              value: '5'
+            - name: DB_MAX_OVERFLOW
+              value: '5'
+            - name: MS_CLIENT_ID
+              value: 'MS_CLIENT_ID_PLACEHOLDER'
+            - name: PLAID_CLIENT_ID
+              value: 'PLAID_CLIENT_ID_PLACEHOLDER'
             - name: REDIS_URL
               value: ''
           resources:

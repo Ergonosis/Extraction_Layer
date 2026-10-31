@@ -1,0 +1,54 @@
+name: Deploy Extraction Frontend
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'portal/**'
+      - 'firebase.json'
+      - '.firebaserc'
+      - '.env.dev'
+      - '.github/workflows/deploy-frontend.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-extraction-frontend
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Load deployment environment
+        run: grep -v '^#' .env.dev | grep -v '^[[:space:]]*$' >> "$GITHUB_ENV"
+      - name: Authenticate with GCP
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+      - name: Check the API is Ready before publishing its rewrite
+        run: |
+          set -euo pipefail
+          read -r CREATED READY < <(gcloud run services describe "$PORTAL_GCP_CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --quiet \
+            --format='value(status.latestCreatedRevisionName,status.latestReadyRevisionName)')
+          test -n "$READY"
+          test "$CREATED" = "$READY"
+          URL=$(gcloud run services describe "$PORTAL_GCP_CLOUD_RUN_SERVICE" \
+            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format='value(status.url)')
+          curl --fail --show-error --silent "$URL/api/health" > /dev/null
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: '1.4.4'
+      - name: Build static files
+        working-directory: portal
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Publish Hosting only
+        run: bunx firebase-tools deploy --only hosting --project "$GCP_PROJECT_ID" --non-interactive

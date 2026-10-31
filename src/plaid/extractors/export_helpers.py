@@ -2,13 +2,13 @@
 
 import json
 import os
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, timedelta
 
 from src.plaid.extractors.matching import matches_any
 
 
 def resolve_date_range(start_date=None, end_date=None, is_hard_pull=False, window_days=None):
-    end_date = end_date or datetime.now(UTC).date()
+    end_date = end_date or date.today()
     if start_date is None:
         if is_hard_pull:
             start_date = date(2000, 1, 1)

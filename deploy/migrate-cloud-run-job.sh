@@ -2,20 +2,22 @@
 # Run Alembic migrations against Cloud SQL via a one-shot Cloud Run Job.
 # Uses the same image as the API. Safe to re-run (Alembic tracks revisions).
 #
-# Required env: GCP_PROJECT_ID, REGION, IMAGE (or AR_REPO defaults), and either
+# Required env: GCP_PROJECT_ID, REGION, CLOUD_SQL_INSTANCE, IMAGE (digest), and either
 #               DATABASE_URL_SECRET (preferred) or DATABASE_URL
 # Optional: JOB_NAME (default extraction-portal-migrate), VPC_CONNECTOR,
-#           CLOUD_SQL_INSTANCE, SERVICE_ACCOUNT, and Secret Manager ids.
-# See deploy/env.migrate.example. This Job is intentionally outside the current
-# backend deployment workflow until Cloud SQL is provisioned.
+#           SERVICE_ACCOUNT, and Secret Manager ids.
+# See deploy/env.migrate.example. The backend workflow executes this Job before publishing a revision.
 
 set -euo pipefail
 
 : "${GCP_PROJECT_ID:?set GCP_PROJECT_ID}"
 : "${REGION:?set REGION}"
-AR_REPO="${AR_REPO:-portal}"
-IMAGE_NAME="${IMAGE_NAME:-extraction-portal}"
-IMAGE="${IMAGE:-${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:latest}"
+: "${IMAGE:?set IMAGE to the API image digest}"
+: "${CLOUD_SQL_INSTANCE:?set CLOUD_SQL_INSTANCE}"
+if [[ ! "$IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]; then
+  echo "IMAGE must reference an immutable sha256 digest" >&2
+  exit 1
+fi
 JOB_NAME="${JOB_NAME:-extraction-portal-migrate}"
 SECRET_KEY_SECRET="${SECRET_KEY_SECRET:-SECRET_KEY}"
 FERNET_KEY_SECRET="${FERNET_KEY_SECRET:-FERNET_KEY}"
@@ -26,7 +28,7 @@ if [[ -z "${DATABASE_URL_SECRET}" && -z "${DATABASE_URL:-}" ]]; then
   exit 1
 fi
 
-ENV_JOINED="FLASK_APP=src.api.app:create_app,FLASK_ENV=production,USE_GCP_SECRETS=true,GCP_PROJECT_ID=${GCP_PROJECT_ID},ENABLE_DEV_LOGIN=false,SESSION_COOKIE_SECURE=true"
+ENV_JOINED="FLASK_APP=src.api.app:create_app,FLASK_ENV=production,USE_GCP_SECRETS=true,GCP_PROJECT_ID=${GCP_PROJECT_ID},ENABLE_DEV_LOGIN=false,SESSION_COOKIE_SECURE=true,SESSION_COOKIE_NAME=__session,SESSION_BACKEND=sqlalchemy,RATELIMIT_STORAGE_BACKEND=sqlalchemy"
 SECRETS_JOINED="SECRET_KEY=${SECRET_KEY_SECRET}:latest,FERNET_KEY=${FERNET_KEY_SECRET}:latest"
 if [[ -n "${DATABASE_URL_SECRET}" ]]; then
   SECRETS_JOINED="${SECRETS_JOINED},DATABASE_URL=${DATABASE_URL_SECRET}:latest"

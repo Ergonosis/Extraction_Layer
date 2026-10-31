@@ -1,4 +1,4 @@
-"""Verify issue #21 Microsoft SSO backend (mocked MSAL + real DB/Redis).
+"""Verify issue #21 Microsoft SSO backend (mocked MSAL + real shared-state DB).
 
 Usage (from repo root):
   uv run python -m tests.integration.verify_portal_auth
@@ -42,7 +42,12 @@ def fail(msg: str) -> None:
 
 def check_infra() -> None:
     step('Docker Postgres + Redis')
-    for name, port in ((POSTGRES_CONTAINER, '5434'), (REDIS_CONTAINER, '6379')):
+    from src.api.config import Config
+
+    resources = [(POSTGRES_CONTAINER, '5434')]
+    if 'redis' in (Config.SESSION_BACKEND, Config.RATELIMIT_STORAGE_BACKEND):
+        resources.append((REDIS_CONTAINER, '6379'))
+    for name, port in resources:
         ps = subprocess.run(
             ['docker', 'ps', '--filter', f'name=^{name}$', '--format', '{{.Names}}\t{{.Ports}}'],
             capture_output=True,

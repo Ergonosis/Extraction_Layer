@@ -3,7 +3,7 @@
 Usage (from repo root):
   uv run python -m tests.integration.verify_portal_prod_hardening
 
-Requires Postgres + Redis. Does not call Cloud Armor APIs.
+Requires Postgres; Redis only for the explicit Redis backend. Does not call Cloud Armor APIs.
 """
 
 from __future__ import annotations

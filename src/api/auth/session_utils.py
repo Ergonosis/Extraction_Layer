@@ -8,21 +8,11 @@ from urllib.parse import urlparse
 from flask import current_app, session
 
 
-def _redis_client():
-    interface = current_app.session_interface
-    return getattr(interface, 'client', None) or getattr(interface, 'redis', None)
-
-
 def _delete_store_key(sid: str | None) -> None:
-    if not sid:
-        return
-    key_prefix = current_app.config.get('SESSION_KEY_PREFIX', 'session:')
-    try:
-        redis_client = _redis_client()
-        if redis_client is not None:
-            redis_client.delete(f'{key_prefix}{sid}')
-    except Exception:
-        pass
+    """Revoke a stored session; backend failure must not look like successful logout."""
+    if sid:
+        interface = current_app.session_interface
+        interface._delete_session(interface._get_store_id(sid))
 
 
 def regenerate_session() -> None:

@@ -3,7 +3,7 @@
 Usage (from repo root):
   uv run python -m tests.integration.verify_portal_integrations
 
-Requires Postgres (5434) + Redis (6379).
+Requires Postgres (5434); Redis only for the explicit Redis backend.
 """
 
 from __future__ import annotations

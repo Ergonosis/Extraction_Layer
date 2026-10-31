@@ -3,11 +3,9 @@
 import logging
 import os
 import sys
-from pathlib import Path
 
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
-from flask_session import Session
 from werkzeug.exceptions import HTTPException
 
 from src.api.config import Config
@@ -70,28 +68,6 @@ def _assert_production_secrets(app: Flask) -> None:
         raise RuntimeError(f'Production security checks failed: {detail}')
 
 
-def _auto_upgrade_sqlite(app: Flask) -> None:
-    """Upgrade disposable SQLite once per worker startup, serialized per instance."""
-    if not app.config.get('AUTO_MIGRATE_ON_START', False):
-        return
-
-    database_url = str(app.config.get('SQLALCHEMY_DATABASE_URI') or '')
-    if not database_url.startswith('sqlite:'):
-        raise RuntimeError('AUTO_MIGRATE_ON_START is only allowed for disposable SQLite')
-
-    import fcntl
-
-    from flask_migrate import upgrade
-
-    migrations_dir = Path(__file__).resolve().parents[2] / 'migrations'
-    lock_path = Path('/tmp/portal-sqlite-migrate.lock')
-    with lock_path.open('a+') as lock_file:
-        fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
-        logger.info('Applying disposable SQLite migrations from %s', migrations_dir)
-        with app.app_context():
-            upgrade(directory=str(migrations_dir))
-
-
 def _register_error_handlers(app: Flask) -> None:
     """Return JSON errors without stack traces, paths, SQL, or key material."""
 
@@ -124,21 +100,14 @@ def create_app(config_class=Config):
 
     CORS(app, origins=app.config['CORS_ORIGINS'], supports_credentials=True)
 
-    # Redis-backed server-side sessions when REDIS_URL is configured
-    redis_url = app.config.get('REDIS_URL') or ''
-    if redis_url:
-        import redis as redis_lib
-
-        app.config['SESSION_REDIS'] = redis_lib.from_url(redis_url)
-        Session(app)
-
     db.init_app(app)
     migrate.init_app(app, db)
 
     # Register models before Alembic reads SQLAlchemy metadata.
     from src.api import models  # noqa: F401
+    from src.api.session_store import init_sessions
 
-    _auto_upgrade_sqlite(app)
+    init_sessions(app)
     init_limiter(app)
     register_security_middleware(app)
     _register_error_handlers(app)

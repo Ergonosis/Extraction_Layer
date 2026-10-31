@@ -3,7 +3,7 @@
 Usage (from repo root):
   uv run python -m tests.integration.verify_portal_msgraph
 
-Requires Postgres (5434) + Redis (6379). MSAL calls are mocked.
+Requires Postgres (5434); Redis only for the explicit Redis backend. MSAL calls are mocked.
 """
 
 from __future__ import annotations
