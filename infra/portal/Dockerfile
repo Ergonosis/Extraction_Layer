@@ -1,6 +1,6 @@
 ARG PYTHON_VERSION=3
 
-FROM ghcr.io/astral-sh/uv:0.12 AS uv
+FROM ghcr.io/astral-sh/uv:0.13 AS uv
 
 FROM python:${PYTHON_VERSION}-slim
 

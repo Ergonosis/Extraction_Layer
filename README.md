@@ -130,9 +130,9 @@ Retrieves emails from a Microsoft 365 mailbox using **client credentials (servic
 Add the Microsoft variables to the root `.env` file:
 
 ```env
-MS_CLIENT_ID=your_azure_client_id
-MS_CLIENT_SECRET=your_azure_client_secret
-MS_TENANT_ID=your_azure_tenant_id
+MSGRAPH_CLIENT_ID=your_azure_client_id
+MSGRAPH_CLIENT_SECRET=your_azure_client_secret
+MSGRAPH_TENANT_ID=your_azure_tenant_id
 USER_EMAIL=user@company.com
 ```
 
@@ -159,9 +159,9 @@ import os
 load_dotenv()
 
 emails = fetch_user_emails(
-    client_id=os.environ["MS_CLIENT_ID"],
-    client_secret=os.environ["MS_CLIENT_SECRET"],
-    tenant_id=os.environ["MS_TENANT_ID"],
+    client_id=os.environ["MSGRAPH_CLIENT_ID"],
+    client_secret=os.environ["MSGRAPH_CLIENT_SECRET"],
+    tenant_id=os.environ["MSGRAPH_TENANT_ID"],
     user_email=os.environ["USER_EMAIL"],
     start_datetime="2026-01-01T00:00:00Z",
     end_datetime="2026-02-28T23:59:59Z",
@@ -217,9 +217,7 @@ uv run python -m tests.integration.verify_portal_tenancy
 ## Deploy to GCP
 
 Production deployment uses GitHub Actions with keyless GCP authentication and
-an immutable Cloud Run image digest. See
-**[docs/gcp-launch-runbook.md](docs/gcp-launch-runbook.md)**. Firebase serves the
-SPA; the Cloud Run image contains only the API.
+an immutable Cloud Run image digest.
 
 ---
 
@@ -231,3 +229,13 @@ SPA; the Cloud Run image contains only the API.
 - Plaid's initial account connect automatically exports the full available transaction history.
 - All exports are append-safe — each run generates a new timestamped file; no existing files are overwritten.
 - Local commands read the root `.env`; never commit credentials.
+
+## Secret naming
+
+Use final names directly for environment variables and Secret Manager IDs:
+`EXTRACTION_PORTAL_FLASK_SECRET_KEY`, `EXTRACTION_PORTAL_FERNET_KEY`,
+`EXTRACTION_PORTAL_DATABASE_URL`, `MSGRAPH_CLIENT_SECRET`, `PLAID_SECRET`.
+There are no *_SECRET_ID or *_SECRET override variables. Client IDs use
+MSGRAPH_CLIENT_ID and PLAID_CLIENT_ID. Flask's required SECRET_KEY config
+reads EXTRACTION_PORTAL_FLASK_SECRET_KEY. Existing local .env files must adopt
+these names; old aliases are not supported. Shared cloud credentials are unchanged.

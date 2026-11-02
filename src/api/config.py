@@ -37,8 +37,7 @@ def _secret_from_gcp(secret_id: str) -> str | None:
 def _load_secret(env_name: str, default: str = '') -> str:
     """Prefer GCP Secret Manager when USE_GCP_SECRETS is set; else env / default."""
     if _env_bool('USE_GCP_SECRETS', False):
-        secret_id = os.getenv(f'{env_name}_SECRET_ID', env_name)
-        value = _secret_from_gcp(secret_id)
+        value = _secret_from_gcp(env_name)
         if value:
             return value
     return os.getenv(env_name, default)
@@ -49,10 +48,12 @@ class Config:
 
     FLASK_ENV = os.getenv('FLASK_ENV', 'development')
 
-    SECRET_KEY = _load_secret('SECRET_KEY', 'dev-only-change-me')
+    SECRET_KEY = _load_secret('EXTRACTION_PORTAL_FLASK_SECRET_KEY', 'dev-only-change-me')
     # Local default: dedicated extraction-portal-postgres Docker container (host port 5434).
-    # Do not use 5432/5433 (other projects). Override with DATABASE_URL for Cloud SQL in production.
-    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://portal:portal@localhost:5434/portal')
+    # Do not use 5432/5433 (other projects). Override with EXTRACTION_PORTAL_DATABASE_URL for Cloud SQL in production.
+    EXTRACTION_PORTAL_DATABASE_URL = os.getenv(
+        'EXTRACTION_PORTAL_DATABASE_URL', 'postgresql://portal:portal@localhost:5434/portal'
+    )
 
     # Shared PostgreSQL state by default; Redis is an explicit fallback.
     REDIS_URL = os.getenv('REDIS_URL', '')
@@ -63,12 +64,12 @@ class Config:
 
     # Microsoft Entra ID — multi-tenant SSO (issue #21)
     # Authority uses /organizations so any work/school tenant can sign in.
-    MS_CLIENT_ID = os.getenv('MS_CLIENT_ID', '')
-    MS_CLIENT_SECRET = _load_secret('MS_CLIENT_SECRET', '')
+    MSGRAPH_CLIENT_ID = os.getenv('MSGRAPH_CLIENT_ID', '')
+    MSGRAPH_CLIENT_SECRET = _load_secret('MSGRAPH_CLIENT_SECRET', '')
     # Optional / legacy: single-tenant Graph app scripts may still read this.
-    # Portal SSO does NOT use MS_TENANT_ID as the login boundary — authority is
+    # Portal SSO does NOT use MSGRAPH_TENANT_ID as the login boundary — authority is
     # /organizations below, with optional MS_TENANT_ALLOWLIST.
-    MS_TENANT_ID = os.getenv('MS_TENANT_ID', '')
+    MSGRAPH_TENANT_ID = os.getenv('MSGRAPH_TENANT_ID', '')
     MS_AUTHORITY = os.getenv('MS_AUTHORITY', 'https://login.microsoftonline.com/organizations')
     # Local default goes through the Vite proxy so the session cookie is set on the SPA origin.
     MS_REDIRECT_URI = os.getenv('MS_REDIRECT_URI', 'http://localhost:5175/api/auth/callback')
@@ -97,10 +98,10 @@ class Config:
     PLAID_RECORDS_DIR = os.getenv('PLAID_RECORDS_DIR', 'records')
 
     # Fernet key for token encryption (used by later issues)
-    FERNET_KEY = _load_secret('FERNET_KEY', '')
+    EXTRACTION_PORTAL_FERNET_KEY = _load_secret('EXTRACTION_PORTAL_FERNET_KEY', '')
     # Optional previous Fernet keys (comma-separated) for decrypt during rotation.
-    FERNET_PREVIOUS_KEYS: ClassVar[list[str]] = [
-        k.strip() for k in os.getenv('FERNET_PREVIOUS_KEYS', '').split(',') if k.strip()
+    EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS: ClassVar[list[str]] = [
+        k.strip() for k in os.getenv('EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS', '').split(',') if k.strip()
     ]
     # When true (or FLASK_ENV=production), prefer Secret Manager for secrets.
     USE_GCP_SECRETS = _env_bool('USE_GCP_SECRETS', False)
@@ -119,7 +120,7 @@ class Config:
     CSP_MODE = os.getenv('CSP_MODE', '')
     CSP_POLICY = os.getenv('CSP_POLICY', '')
 
-    SQLALCHEMY_DATABASE_URI = DATABASE_URL
+    SQLALCHEMY_DATABASE_URI = EXTRACTION_PORTAL_DATABASE_URL
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS: ClassVar[dict] = {
         'pool_pre_ping': True,

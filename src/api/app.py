@@ -6,12 +6,14 @@ import sys
 
 from flask import Flask, jsonify, send_from_directory
 from flask_cors import CORS
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 from werkzeug.exceptions import HTTPException
 
 from src.api.config import Config
 from src.api.extensions import db, migrate
 from src.api.middleware import register_security_middleware
-from src.api.rate_limit import init_limiter
+from src.api.rate_limit import init_limiter, limiter
 
 logger = logging.getLogger(__name__)
 
@@ -49,14 +51,14 @@ def _assert_production_secrets(app: Flask) -> None:
         return
 
     secret = app.config.get('SECRET_KEY') or ''
-    fernet = app.config.get('FERNET_KEY') or ''
+    fernet = app.config.get('EXTRACTION_PORTAL_FERNET_KEY') or ''
     use_gcp = bool(app.config.get('USE_GCP_SECRETS'))
 
     problems: list[str] = []
     if not secret or secret == _DEV_SECRET_DEFAULT:
         problems.append('SECRET_KEY must be set to a non-default value')
     if not fernet:
-        problems.append('FERNET_KEY must be set')
+        problems.append('EXTRACTION_PORTAL_FERNET_KEY must be set')
     if not use_gcp:
         problems.append('USE_GCP_SECRETS must be true in production')
     if not app.config.get('SESSION_COOKIE_SECURE', False):
@@ -123,6 +125,7 @@ def create_app(config_class=Config):
     app.register_blueprint(msgraph_bp, url_prefix='/api/msgraph')
 
     @app.get('/api/health')
+    @limiter.exempt
     def health():
         return jsonify(
             {
@@ -132,6 +135,16 @@ def create_app(config_class=Config):
                 'flask_env': app.config.get('FLASK_ENV'),
             }
         )
+
+    @app.get('/api/ready')
+    @limiter.exempt
+    def ready():
+        try:
+            with db.engine.connect() as connection:
+                connection.execute(text('SELECT 1'))
+        except SQLAlchemyError:
+            return jsonify({'status': 'unavailable'}), 503
+        return jsonify({'status': 'ok'})
 
     _register_portal_static(app)
 

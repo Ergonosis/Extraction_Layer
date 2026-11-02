@@ -8,11 +8,11 @@ from flask import current_app
 
 def build_msal_app() -> msal.ConfidentialClientApplication:
     """Build an MSAL app for the multi-tenant portal SSO registration."""
-    client_id = current_app.config.get('MS_CLIENT_ID') or ''
-    client_secret = current_app.config.get('MS_CLIENT_SECRET') or ''
+    client_id = current_app.config.get('MSGRAPH_CLIENT_ID') or ''
+    client_secret = current_app.config.get('MSGRAPH_CLIENT_SECRET') or ''
     authority = current_app.config.get('MS_AUTHORITY') or ('https://login.microsoftonline.com/organizations')
     if not client_id or not client_secret:
-        raise RuntimeError('MS_CLIENT_ID and MS_CLIENT_SECRET must be configured for Microsoft SSO')
+        raise RuntimeError('MSGRAPH_CLIENT_ID and MSGRAPH_CLIENT_SECRET must be configured for Microsoft SSO')
     return msal.ConfidentialClientApplication(client_id=client_id, client_credential=client_secret, authority=authority)
 
 

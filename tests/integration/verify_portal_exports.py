@@ -17,15 +17,15 @@ from unittest.mock import MagicMock, patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-os.environ.setdefault('MS_CLIENT_ID', 'verify-client-id')
-os.environ.setdefault('MS_CLIENT_SECRET', 'verify-client-secret')
+os.environ.setdefault('MSGRAPH_CLIENT_ID', 'verify-client-id')
+os.environ.setdefault('MSGRAPH_CLIENT_SECRET', 'verify-client-secret')
 os.environ.setdefault('PLAID_CLIENT_ID', 'verify-plaid-client')
 os.environ.setdefault('PLAID_SECRET', 'verify-plaid-secret')
 os.environ.setdefault('PLAID_ENV', 'sandbox')
 
 from cryptography.fernet import Fernet
 
-os.environ.setdefault('FERNET_KEY', Fernet.generate_key().decode())
+os.environ.setdefault('EXTRACTION_PORTAL_FERNET_KEY', Fernet.generate_key().decode())
 
 
 class CheckFailed(Exception):

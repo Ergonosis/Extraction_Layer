@@ -43,8 +43,11 @@ def ping_mutation():
 @auth_login_limit
 def login():
     """Start Microsoft SSO: redirect browser to Entra authorize URL."""
-    if not current_app.config.get('MS_CLIENT_ID') or not current_app.config.get('MS_CLIENT_SECRET'):
-        return (jsonify({'error': 'SSO not configured', 'detail': 'Set MS_CLIENT_ID and MS_CLIENT_SECRET'}), 503)
+    if not current_app.config.get('MSGRAPH_CLIENT_ID') or not current_app.config.get('MSGRAPH_CLIENT_SECRET'):
+        return (
+            jsonify({'error': 'SSO not configured', 'detail': 'Set MSGRAPH_CLIENT_ID and MSGRAPH_CLIENT_SECRET'}),
+            503,
+        )
 
     state = secrets.token_urlsafe(32)
     session.permanent = True

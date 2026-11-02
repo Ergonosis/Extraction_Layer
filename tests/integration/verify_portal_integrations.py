@@ -14,8 +14,8 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-os.environ.setdefault('MS_CLIENT_ID', 'verify-client-id')
-os.environ.setdefault('MS_CLIENT_SECRET', 'verify-client-secret')
+os.environ.setdefault('MSGRAPH_CLIENT_ID', 'verify-client-id')
+os.environ.setdefault('MSGRAPH_CLIENT_SECRET', 'verify-client-secret')
 
 
 class CheckFailed(Exception):

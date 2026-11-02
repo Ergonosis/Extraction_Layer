@@ -2,7 +2,7 @@
 
 Prerequisites (repo root):
   - Postgres running; Redis only for the explicit Redis backend
-  - Root `.env` with ENABLE_DEV_LOGIN=true, FERNET_KEY, PLAID_* sandbox keys
+  - Root `.env` with ENABLE_DEV_LOGIN=true, EXTRACTION_PORTAL_FERNET_KEY, PLAID_* sandbox keys
   - You already connected Plaid in the portal as the local dev user
     (Connections → Connect → sandbox Link, e.g. user_good / pass_good)
 
@@ -114,8 +114,8 @@ def main() -> int:
     if not (app.config.get('PLAID_CLIENT_ID') and app.config.get('PLAID_SECRET')):
         print('Set PLAID_CLIENT_ID and PLAID_SECRET in .env (sandbox is fine).', file=sys.stderr)
         return 1
-    if not app.config.get('FERNET_KEY'):
-        print('Set FERNET_KEY in .env (required to decrypt the stored Plaid token).', file=sys.stderr)
+    if not app.config.get('EXTRACTION_PORTAL_FERNET_KEY'):
+        print('Set EXTRACTION_PORTAL_FERNET_KEY in .env (required to decrypt the stored Plaid token).', file=sys.stderr)
         return 1
 
     client = app.test_client()

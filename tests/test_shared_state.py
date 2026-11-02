@@ -28,8 +28,8 @@ def test_app_factory_registers_shared_sessions_without_connecting_or_creating_ta
         SECRET_KEY = 'test-only-secret'
         SESSION_BACKEND = 'sqlalchemy'
         RATELIMIT_STORAGE_BACKEND = 'sqlalchemy'
-        DATABASE_URL = 'postgresql+psycopg://test@localhost/test'
-        SQLALCHEMY_DATABASE_URI = DATABASE_URL
+        EXTRACTION_PORTAL_DATABASE_URL = 'postgresql+psycopg://test@localhost/test'
+        SQLALCHEMY_DATABASE_URI = EXTRACTION_PORTAL_DATABASE_URL
 
     first, second = create_app(TestConfig), create_app(TestConfig)
     assert isinstance(first.session_interface, PortalSessionInterface)
@@ -167,3 +167,25 @@ def test_sqlalchemy_session_deletion_rolls_back_and_propagates_failure(monkeypat
         type(interface)._delete_session.__wrapped__(interface, 'portal:session:old')
     client.session.rollback.assert_called_once()
     client.session.commit.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    'name',
+    ['EXTRACTION_PORTAL_FLASK_SECRET_KEY', 'EXTRACTION_PORTAL_FERNET_KEY', 'MSGRAPH_CLIENT_SECRET', 'PLAID_SECRET'],
+)
+def test_secret_lookup_uses_the_same_name_for_env_and_cloud(monkeypatch, name):
+    from src.api import config
+
+    monkeypatch.setenv('USE_GCP_SECRETS', 'true')
+    lookup = MagicMock(return_value='test-value')
+    monkeypatch.setattr(config, '_secret_from_gcp', lookup)
+    assert config._load_secret(name) == 'test-value'
+    lookup.assert_called_once_with(name)
+
+
+def test_local_secret_reads_the_final_environment_name(monkeypatch):
+    from src.api import config
+
+    monkeypatch.setenv('USE_GCP_SECRETS', 'false')
+    monkeypatch.setenv('EXTRACTION_PORTAL_FLASK_SECRET_KEY', 'test-value')
+    assert config._load_secret('EXTRACTION_PORTAL_FLASK_SECRET_KEY') == 'test-value'

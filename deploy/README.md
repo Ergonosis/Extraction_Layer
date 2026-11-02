@@ -1,7 +1,5 @@
 # Deploy tooling
 
-See [the GCP launch runbook](../docs/gcp-launch-runbook.md).
-
 - `check-cloud-sql-ready.sh`: validate configuration and Cloud SQL/secret metadata
   before building; never enables APIs or reads secret values.
 - `migrate-cloud-run-job.sh`: run `flask db upgrade` using the API image digest.

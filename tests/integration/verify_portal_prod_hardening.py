@@ -67,13 +67,6 @@ def main() -> int:
             fail(f'SECURITY.md missing {needle!r}')
     ok('SECURITY.md hardening section present')
 
-    step('GCP launch runbook preserves production networking gates')
-    deploy_doc = (REPO_ROOT / 'docs' / 'gcp-launch-runbook.md').read_text(encoding='utf-8')
-    for needle in ('Cloud SQL', 'Redis', 'Secret Manager', '后续生产化顺序'):
-        if needle not in deploy_doc:
-            fail(f'docs/gcp-launch-runbook.md missing {needle!r}')
-    ok('deploy docs updated')
-
     print('\nAll issue #33 hardening checks passed (WAF deferred).')
     return 0
 

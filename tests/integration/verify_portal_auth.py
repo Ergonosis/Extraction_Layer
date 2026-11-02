@@ -17,8 +17,8 @@ from unittest.mock import patch
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 # Dummy Entra app credentials for local verification (MSAL is mocked)
-os.environ.setdefault('MS_CLIENT_ID', 'verify-client-id')
-os.environ.setdefault('MS_CLIENT_SECRET', 'verify-client-secret')
+os.environ.setdefault('MSGRAPH_CLIENT_ID', 'verify-client-id')
+os.environ.setdefault('MSGRAPH_CLIENT_SECRET', 'verify-client-secret')
 
 REDIS_CONTAINER = 'extraction-portal-redis'
 POSTGRES_CONTAINER = 'extraction-portal-postgres'

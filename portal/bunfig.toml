@@ -12,7 +12,6 @@ globalStore = true
 
 
 [lint]
-plugins = ["eslint-plugin-react-compiler"]
 typeAware = true
 
 [lint.categories]
@@ -23,8 +22,6 @@ style = "warn"
 suspicious = "warn"
 
 [lint.rules]
-"react-compiler/react-compiler" = "error"
-
 "react-hooks/purity" = "error"
 "react-hooks/immutability" = "error"
 "react-hooks/refs" = "error"

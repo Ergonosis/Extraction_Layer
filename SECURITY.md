@@ -9,7 +9,7 @@ set FLASK_APP=src.api.app:create_app
 flask db upgrade
 ```
 
-Use `DATABASE_URL` in `.env` if needed. Local default is `postgresql://portal:portal@localhost:5434/portal` (Docker `extraction-portal-postgres`). Do not use ports 5432/5433. Production uses Cloud SQL.
+Use `EXTRACTION_PORTAL_DATABASE_URL` in `.env` if needed. Local default is `postgresql://portal:portal@localhost:5434/portal` (Docker `extraction-portal-postgres`). Do not use ports 5432/5433. Production uses Cloud SQL.
 
 ## Shared sessions and rate limits
 
@@ -40,7 +40,7 @@ The portal uses **shared-schema** tenancy: one Cloud SQL / Postgres database, ev
 | Signed-in person (`oid` claim)       | `users` row scoped by `(organization_id, ms_oid)`                                 |
 | Plaid / MS Graph connection          | `integrations` row per `(user_id, provider)`, also stamped with `organization_id` |
 
-SSO (`complete_sso_login`) finds or creates the org from `tid`, then finds or creates the user in that org. The session stores only `user_id` and `organization_id`. Portal SSO authority is `https://login.microsoftonline.com/organizations` — **not** a single `MS_TENANT_ID`. Optional `MS_TENANT_ALLOWLIST` restricts which Entra tenants may sign in.
+SSO (`complete_sso_login`) finds or creates the org from `tid`, then finds or creates the user in that org. The session stores only `user_id` and `organization_id`. Portal SSO authority is `https://login.microsoftonline.com/organizations` — **not** a single `MSGRAPH_TENANT_ID`. Optional `MS_TENANT_ALLOWLIST` restricts which Entra tenants may sign in.
 
 ### Isolation rules
 
@@ -62,7 +62,7 @@ Historical estimates below describe the previous Redis/Memorystore stack, not qu
 
 Production checklist for multi-instance scale:
 
-- [ ] `DATABASE_URL` points at Cloud SQL (business data, sessions, rate limits)
+- [ ] `EXTRACTION_PORTAL_DATABASE_URL` points at Cloud SQL (business data, sessions, rate limits)
 - [ ] Both backends use PostgreSQL, or an explicitly configured Redis fallback
 - [ ] `SESSION_COOKIE_NAME=__session` and API responses use `Cache-Control: no-store`
 - [ ] Connection pool caps fit the database budget
@@ -77,8 +77,7 @@ uv run python -m tests.integration.verify_portal_tenancy
 
 Backend build and Cloud Run Service deployment are defined in
 `.github/workflows/deploy-backend.yaml` and `infra/portal/cloudrun.yaml`.
-Database migration remains under `deploy/`. See
-**[docs/gcp-launch-runbook.md](docs/gcp-launch-runbook.md)**.
+Database migration remains under `deploy/`.
 
 ## Production GCP hardening (issue #33)
 
@@ -90,7 +89,7 @@ App-layer cookies/CSRF/rate limits/Fernet are covered by #20 / #28. This section
 | ----------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Cloud SQL   | Private IP **or** Unix socket via Cloud SQL connector: `postgresql://USER:PASS@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE` |
 | Memorystore | Private VPC IP, e.g. `redis://10.x.x.x:6379/0` (enable AUTH when available); **not** a public `:6379`                      |
-| Cloud Run   | Built-in Cloud SQL socket; private networking is needed only for private SQL or optional Redis |
+| Cloud Run   | Built-in Cloud SQL socket; private networking is needed only for private SQL or optional Redis                             |
 | Secrets     | `USE_GCP_SECRETS=true`, runtime SA with `roles/secretmanager.secretAccessor` + `roles/cloudsql.client` only                |
 
 TLS terminates at Cloud Run / HTTPS load balancer. Production boot requires `SESSION_COOKIE_SECURE=true` (see `src/api/app.py`). Never set `ENABLE_DEV_LOGIN` in production.
@@ -149,9 +148,9 @@ Mutating requests (`POST` / `PUT` / `DELETE` / `PATCH`) must send header `X-CSRF
 
 ## Loading secrets from GCP
 
-Set `USE_GCP_SECRETS=true` and `GCP_PROJECT_ID=...`. Then `SECRET_KEY`, `FERNET_KEY`, and other secrets can be loaded from Secret Manager (`SECRET_KEY_SECRET_ID` overrides the secret name). Locally, keep using `.env`.
+Set `USE_GCP_SECRETS=true` and `GCP_PROJECT_ID=...`. Then `SECRET_KEY`, `EXTRACTION_PORTAL_FERNET_KEY`, and other secrets can be loaded from Secret Manager (`SECRET_KEY_SECRET_ID` overrides the secret name). Locally, keep using `.env`.
 
-## Fernet key (`FERNET_KEY`)
+## Fernet key (`EXTRACTION_PORTAL_FERNET_KEY`)
 
 Plaid and Microsoft Graph tokens are encrypted at rest with Fernet (symmetric AES). The key lives in **Google Cloud Secret Manager** in production. Local development may use a `.env` value; that is not acceptable in production.
 
@@ -163,9 +162,9 @@ python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().d
 
 Store the output in Secret Manager (and locally in `.env` for dev only). Never commit the key. Never log plaintext tokens or the key.
 
-## Rotating `FERNET_KEY`
+## Rotating `EXTRACTION_PORTAL_FERNET_KEY`
 
-App decrypt supports a rotation window: primary `FERNET_KEY` plus optional comma-separated `FERNET_PREVIOUS_KEYS` (decrypt-only fallbacks via `MultiFernet`). Encrypt always uses the primary key.
+App decrypt supports a rotation window: primary `EXTRACTION_PORTAL_FERNET_KEY` plus optional comma-separated `EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS` (decrypt-only fallbacks via `MultiFernet`). Encrypt always uses the primary key.
 
 ### Dry-run / apply script
 
@@ -174,8 +173,8 @@ App decrypt supports a rotation window: primary `FERNET_KEY` plus optional comma
 python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
 
 # Dry-run (no DB writes): current key decrypts, new key re-encrypts in memory
-set FERNET_KEY=<current-key>
-set FERNET_NEW_KEY=<new-key>
+set EXTRACTION_PORTAL_FERNET_KEY=<current-key>
+set EXTRACTION_PORTAL_FERNET_NEW_KEY=<new-key>
 uv run python -m scripts.rotate_fernet_keys --dry-run
 
 # Apply re-encryption to all Plaid + MS Graph credential blobs
@@ -186,11 +185,11 @@ uv run python -m scripts.rotate_fernet_keys --apply
 
 1. Store the new key in Secret Manager; keep the old version readable.
 2. Run `--dry-run`, then `--apply` against the DB.
-3. Point the app `FERNET_KEY` at the new key; set `FERNET_PREVIOUS_KEYS` to the old key briefly.
+3. Point the app `EXTRACTION_PORTAL_FERNET_KEY` at the new key; set `EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS` to the old key briefly.
 4. Confirm a sample `decrypt_token` / status refresh succeeds.
-5. Clear `FERNET_PREVIOUS_KEYS` and disable the old Secret Manager version.
+5. Clear `EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS` and disable the old Secret Manager version.
 
-If the only copy of `FERNET_KEY` is lost, stored tokens cannot be recovered. Users must reconnect Plaid and Microsoft Graph.
+If the only copy of `EXTRACTION_PORTAL_FERNET_KEY` is lost, stored tokens cannot be recovered. Users must reconnect Plaid and Microsoft Graph.
 
 ## Flask `SECRET_KEY`
 
@@ -204,8 +203,8 @@ Redirect URI (web): `http://localhost:5175/api/auth/callback` for local portal +
 
 Required app env vars:
 
-- `MS_CLIENT_ID`
-- `MS_CLIENT_SECRET` (Secret Manager in production)
+- `MSGRAPH_CLIENT_ID`
+- `MSGRAPH_CLIENT_SECRET` (Secret Manager in production)
 - Optional: `MS_TENANT_ALLOWLIST` (comma-separated tenant IDs; empty = allow any org tenant)
 - Optional: `PORTAL_URL` (default `http://localhost:5175`), `PORTAL_POST_LOGIN_PATH` (default `/connections`)
 
@@ -222,7 +221,7 @@ uv run python -m tests.integration.verify_portal_auth
 - `POST /connect` (10/min), `POST /exchange` (5/min), `POST /disconnect` (5/min) require login + CSRF.
 - `GET /status` (15/min) requires login; never returns access tokens.
 - Access tokens are Fernet-encrypted into `plaid_credentials.access_token_enc` before any DB write. Plaintext exists only in memory for Plaid API calls.
-- Local/sandbox: set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, and `FERNET_KEY`.
+- Local/sandbox: set `PLAID_CLIENT_ID`, `PLAID_SECRET`, `PLAID_ENV=sandbox`, and `EXTRACTION_PORTAL_FERNET_KEY`.
 
 ```bash
 uv run python -m tests.integration.verify_portal_plaid
@@ -297,7 +296,7 @@ Verified locally with `uv run python -m tests.integration.verify_portal_security
 | `Secure` in production                            | Enforced by production boot guard + default when `FLASK_ENV=production` |
 | 8h session lifetime → `/auth/me` 401 when expired | Lifetime configured 8h; logout / missing session returns 401            |
 | Session ID changes after `/auth/callback`         | `regenerate_session()` on SSO + dev-login                               |
-| Logout destroys server-side session               | `destroy_session()` deletes the PostgreSQL/Redis record + rotates sid                     |
+| Logout destroys server-side session               | `destroy_session()` deletes the PostgreSQL/Redis record + rotates sid   |
 
 ### CSRF
 
@@ -320,11 +319,11 @@ Verified locally with `uv run python -m tests.integration.verify_portal_security
 
 ### Encryption / secrets
 
-| Check                                       | Status                                                                                                      |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| No endpoint returns tokens/secrets/keys     | Audited (`/auth/me`, integrations, exports)                                                                 |
-| Production loads secrets via Secret Manager | Boot refuses production without `USE_GCP_SECRETS`, real `SECRET_KEY`, `FERNET_KEY`, `SESSION_COOKIE_SECURE` |
-| Fernet rotation dry-run                     | `scripts/rotate_fernet_keys.py` + `FERNET_PREVIOUS_KEYS`                                                    |
+| Check                                       | Status                                                                                                                        |
+| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| No endpoint returns tokens/secrets/keys     | Audited (`/auth/me`, integrations, exports)                                                                                   |
+| Production loads secrets via Secret Manager | Boot refuses production without `USE_GCP_SECRETS`, real `SECRET_KEY`, `EXTRACTION_PORTAL_FERNET_KEY`, `SESSION_COOKIE_SECURE` |
+| Fernet rotation dry-run                     | `scripts/rotate_fernet_keys.py` + `EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS`                                                    |
 
 ### Response security
 
@@ -346,3 +345,13 @@ Verified locally with `uv run python -m tests.integration.verify_portal_security
 uv run python -m tests.integration.verify_portal_security
 uv run python -m tests.integration.verify_portal_security_audit
 ```
+
+## Secret naming
+
+Use final names directly for environment variables and Secret Manager IDs:
+`EXTRACTION_PORTAL_FLASK_SECRET_KEY`, `EXTRACTION_PORTAL_FERNET_KEY`,
+`EXTRACTION_PORTAL_DATABASE_URL`, `MSGRAPH_CLIENT_SECRET`, `PLAID_SECRET`.
+There are no *_SECRET_ID or *_SECRET override variables. Client IDs use
+MSGRAPH_CLIENT_ID and PLAID_CLIENT_ID. Flask's required SECRET_KEY config
+reads EXTRACTION_PORTAL_FLASK_SECRET_KEY. Existing local .env files must adopt
+these names; old aliases are not supported. Shared cloud credentials are unchanged.

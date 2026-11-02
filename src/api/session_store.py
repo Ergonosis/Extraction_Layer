@@ -1,6 +1,7 @@
 """Use Flask-Session persistence without its implicit table creation at startup."""
 
-from flask import Flask
+from flask import Flask, Request
+from flask.sessions import NullSession
 from flask_session import Session
 from flask_session.base import ServerSideSessionInterface
 from flask_session.defaults import Defaults
@@ -11,6 +12,11 @@ from src.api.models import PortalSession
 
 
 class PortalSessionInterface(SqlAlchemySessionInterface):
+    def open_session(self, app: Flask, request: Request):
+        if request.method in {'GET', 'HEAD'} and request.path in {'/api/health', '/api/ready'}:
+            return NullSession()
+        return super().open_session(app, request)
+
     def __init__(self, app: Flask):
         self.app = app
         self.client = db

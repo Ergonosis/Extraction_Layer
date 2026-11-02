@@ -17,8 +17,8 @@ from unittest.mock import patch
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
-os.environ.setdefault('MS_CLIENT_ID', 'verify-client-id')
-os.environ.setdefault('MS_CLIENT_SECRET', 'verify-client-secret')
+os.environ.setdefault('MSGRAPH_CLIENT_ID', 'verify-client-id')
+os.environ.setdefault('MSGRAPH_CLIENT_SECRET', 'verify-client-secret')
 os.environ.setdefault('PLAID_CLIENT_ID', 'verify-plaid-client')
 os.environ.setdefault('PLAID_SECRET', 'verify-plaid-secret')
 
@@ -26,8 +26,8 @@ from cryptography.fernet import Fernet
 
 PRIMARY_KEY = Fernet.generate_key().decode()
 PREVIOUS_KEY = Fernet.generate_key().decode()
-os.environ['FERNET_KEY'] = PRIMARY_KEY
-os.environ['FERNET_PREVIOUS_KEYS'] = PREVIOUS_KEY
+os.environ['EXTRACTION_PORTAL_FERNET_KEY'] = PRIMARY_KEY
+os.environ['EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS'] = PREVIOUS_KEY
 
 
 class CheckFailed(Exception):
@@ -98,7 +98,7 @@ def main() -> int:
                 {
                     'FLASK_ENV': 'production',
                     'SECRET_KEY': 'dev-only-change-me',
-                    'FERNET_KEY': '',
+                    'EXTRACTION_PORTAL_FERNET_KEY': '',
                     'USE_GCP_SECRETS': False,
                     'SESSION_COOKIE_SECURE': False,
                 }

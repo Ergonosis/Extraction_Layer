@@ -13,12 +13,12 @@ def _encode_key(key: str | bytes) -> bytes:
 
 
 def _fernet_keys() -> list[bytes]:
-    """Primary FERNET_KEY first, then optional previous keys for rotation decrypt."""
-    primary = current_app.config.get('FERNET_KEY') or ''
+    """Primary EXTRACTION_PORTAL_FERNET_KEY first, then optional previous keys for rotation decrypt."""
+    primary = current_app.config.get('EXTRACTION_PORTAL_FERNET_KEY') or ''
     if not primary:
-        raise RuntimeError('FERNET_KEY is not set')
+        raise RuntimeError('EXTRACTION_PORTAL_FERNET_KEY is not set')
     keys = [_encode_key(primary)]
-    previous = current_app.config.get('FERNET_PREVIOUS_KEYS') or []
+    previous = current_app.config.get('EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS') or []
     for item in previous:
         if item:
             keys.append(_encode_key(item))
@@ -35,7 +35,7 @@ def _fernet() -> Fernet | MultiFernet:
 def encrypt_token(plaintext: str) -> bytes:
     """Encrypt a token string. Result is stored in the database as bytes.
 
-    Always encrypts with the primary ``FERNET_KEY`` (MultiFernet first key).
+    Always encrypts with the primary ``EXTRACTION_PORTAL_FERNET_KEY`` (MultiFernet first key).
     """
     if plaintext is None:
         raise ValueError('plaintext token is required')
@@ -45,7 +45,7 @@ def encrypt_token(plaintext: str) -> bytes:
 def decrypt_token(token_enc: bytes) -> str:
     """Decrypt a stored token blob. Caller must keep the result in memory only.
 
-    Tries primary then ``FERNET_PREVIOUS_KEYS`` during key rotation windows.
+    Tries primary then ``EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS`` during key rotation windows.
     """
     if not token_enc:
         raise ValueError('encrypted token is required')

@@ -68,17 +68,17 @@ def check_container() -> None:
 
 
 def check_config() -> None:
-    step('Config DATABASE_URL')
+    step('Config EXTRACTION_PORTAL_DATABASE_URL')
     from src.api.config import Config
 
-    url = Config.DATABASE_URL
+    url = Config.EXTRACTION_PORTAL_DATABASE_URL
     if f':{EXPECTED_PORT}/' not in url and f':{EXPECTED_PORT}' not in url:
-        fail(f'DATABASE_URL must use port {EXPECTED_PORT}, got: {url}')
+        fail(f'EXTRACTION_PORTAL_DATABASE_URL must use port {EXPECTED_PORT}, got: {url}')
     for bad in FORBIDDEN_PORTS:
         if f':{bad}/' in url or url.endswith(f':{bad}'):
-            fail(f'DATABASE_URL must not use port {bad}, got: {url}')
+            fail(f'EXTRACTION_PORTAL_DATABASE_URL must not use port {bad}, got: {url}')
     if Config.SQLALCHEMY_DATABASE_URI != url:
-        fail('SQLALCHEMY_DATABASE_URI does not match DATABASE_URL')
+        fail('SQLALCHEMY_DATABASE_URI does not match EXTRACTION_PORTAL_DATABASE_URL')
     ok(url)
 
 
@@ -112,7 +112,7 @@ def check_crypto() -> None:
     from src.api.crypto import decrypt_token, encrypt_token
 
     app = create_app()
-    app.config['FERNET_KEY'] = Fernet.generate_key().decode()
+    app.config['EXTRACTION_PORTAL_FERNET_KEY'] = Fernet.generate_key().decode()
     with app.app_context():
         blob = encrypt_token('verify-portal-db-token')
         if not isinstance(blob, (bytes, bytearray)):

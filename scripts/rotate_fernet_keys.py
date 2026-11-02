@@ -3,11 +3,11 @@
 Usage (from repo root):
 
   # Dry-run: decrypt with OLD key, re-encrypt with NEW, do not write
-  set FERNET_KEY=<old-key>
-  set FERNET_NEW_KEY=<new-key>
+  set EXTRACTION_PORTAL_FERNET_KEY=<old-key>
+  set EXTRACTION_PORTAL_FERNET_NEW_KEY=<new-key>
   uv run python -m scripts.rotate_fernet_keys --dry-run
 
-  # Apply: rewrite ciphertext with NEW key (keep OLD in FERNET_PREVIOUS_KEYS
+  # Apply: rewrite ciphertext with NEW key (keep OLD in EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS
   # on the app until all rows are verified, then drop previous keys)
   uv run python -m scripts.rotate_fernet_keys --apply
 
@@ -31,13 +31,16 @@ def main() -> int:
     mode.add_argument('--apply', action='store_true', help='Write re-encrypted blobs')
     args = parser.parse_args()
 
-    old_key = (os.environ.get('FERNET_KEY') or '').strip()
-    new_key = (os.environ.get('FERNET_NEW_KEY') or '').strip()
+    old_key = (os.environ.get('EXTRACTION_PORTAL_FERNET_KEY') or '').strip()
+    new_key = (os.environ.get('EXTRACTION_PORTAL_FERNET_NEW_KEY') or '').strip()
     if not old_key or not new_key:
-        print('Set FERNET_KEY (current/old) and FERNET_NEW_KEY (next)', file=sys.stderr)
+        print(
+            'Set EXTRACTION_PORTAL_FERNET_KEY (current/old) and EXTRACTION_PORTAL_FERNET_NEW_KEY (next)',
+            file=sys.stderr,
+        )
         return 2
     if old_key == new_key:
-        print('FERNET_NEW_KEY must differ from FERNET_KEY', file=sys.stderr)
+        print('EXTRACTION_PORTAL_FERNET_NEW_KEY must differ from EXTRACTION_PORTAL_FERNET_KEY', file=sys.stderr)
         return 2
 
     from cryptography.fernet import Fernet, InvalidToken
@@ -86,7 +89,9 @@ def main() -> int:
         if args.apply and failures == 0:
             db.session.commit()
             print(f'Applied re-encryption to {updated} field(s); checked {checked}')
-            print('Next: set app FERNET_KEY to the new key; keep old in FERNET_PREVIOUS_KEYS')
+            print(
+                'Next: set app EXTRACTION_PORTAL_FERNET_KEY to the new key; keep old in EXTRACTION_PORTAL_FERNET_PREVIOUS_KEYS'
+            )
             print('until a sample decrypt succeeds in production, then remove previous keys.')
         elif args.apply:
             db.session.rollback()

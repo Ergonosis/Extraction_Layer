@@ -1,10 +1,10 @@
+import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
-import tailwindcss from '@tailwindcss/vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [tailwindcss(), react({ compiler: true })],
+  plugins: [tailwindcss(), react({ compiler: { reportDiagnostics: true } })],
   server: {
     // 5173 is commonly used by other local apps; portal owns 5175.
     port: 5175,
@@ -19,9 +19,7 @@ export default defineConfig({
           proxy.on('proxyRes', proxyRes => {
             const cookies = proxyRes.headers['set-cookie']
             if (!cookies) return
-            proxyRes.headers['set-cookie'] = cookies.map(cookie =>
-              cookie.replace(/;\s*Domain=[^;]+/i, ''),
-            )
+            proxyRes.headers['set-cookie'] = cookies.map(cookie => cookie.replace(/;\s*Domain=[^;]+/i, ''))
           })
         },
       },
