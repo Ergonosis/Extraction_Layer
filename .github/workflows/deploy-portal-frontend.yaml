@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build_and_deploy:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
 
