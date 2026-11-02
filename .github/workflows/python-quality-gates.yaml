@@ -1,0 +1,76 @@
+name: Python CI Quality Gates
+
+on:
+  pull_request:
+    # Skip changes that cannot affect Python dependencies or test behaviour.
+    # Keep source, tests, scripts, pyproject.toml, uv.lock, and this workflow
+    # included by default so future application directories remain covered.
+    paths-ignore:
+      - '**/*.*js'
+      - '**/*.md'
+      - '**/*.*gitignore'
+      - '.github/**'
+      - 'infra/**'
+  workflow_dispatch:
+
+jobs:
+  uv_lock_check:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      # Fails if pyproject.toml changed without a matching committed uv.lock.
+      - name: Verify dependency lock
+        run: uv lock --check
+
+  pytest:
+    needs: uv_lock_check
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Install locked development environment
+        run: uv sync --locked --all-extras --group dev
+
+      - name: Run test suite with coverage
+        run: uv run --locked python -m pytest
+
+  ruff_check:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Run Ruff checks
+        run: uv run --locked ruff check --quiet src scripts tests
+
+  ruff_format:
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: Check Ruff formatting
+        run: uv run --locked ruff format --check --quiet src scripts tests

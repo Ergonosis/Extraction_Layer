@@ -2,52 +2,29 @@
 # Run Alembic migrations against Cloud SQL via a one-shot Cloud Run Job.
 # Uses the same image as the API. Safe to re-run (Alembic tracks revisions).
 #
-# Required env: GCP_PROJECT_ID, REGION, DATABASE_URL, IMAGE (or AR_REPO defaults)
-# Optional: JOB_NAME (default extraction-portal-migrate), VPC_CONNECTOR, CLOUD_SQL_INSTANCE,
-#           SERVICE_ACCOUNT, USE_GCP_SECRETS / secrets for DB URL if preferred later
+# Required env: GCP_PROJECT_ID, REGION, CLOUD_SQL_INSTANCE, IMAGE (digest), and either
+# Secrets use their fixed Portal names in both environment variables and Secret Manager.
+# Required: SERVICE_ACCOUNT. Optional: JOB_NAME (default extraction-portal-migrate).
+# See deploy/env.migrate.example. The backend workflow executes this Job before publishing a revision.
 
 set -euo pipefail
 
 : "${GCP_PROJECT_ID:?set GCP_PROJECT_ID}"
 : "${REGION:?set REGION}"
-: "${DATABASE_URL:?set DATABASE_URL}"
-
-AR_REPO="${AR_REPO:-portal}"
-IMAGE_NAME="${IMAGE_NAME:-extraction-portal}"
-IMAGE="${IMAGE:-${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:latest}"
+: "${IMAGE:?set IMAGE to the API image digest}"
+: "${CLOUD_SQL_INSTANCE:?set CLOUD_SQL_INSTANCE}"
+if [[ ! "$IMAGE" =~ @sha256:[a-f0-9]{64}$ ]]; then
+  echo "IMAGE must reference an immutable sha256 digest" >&2
+  exit 1
+fi
 JOB_NAME="${JOB_NAME:-extraction-portal-migrate}"
+: "${SERVICE_ACCOUNT:?set SERVICE_ACCOUNT}"
+export JOB_NAME IMAGE CLOUD_SQL_INSTANCE SERVICE_ACCOUNT GCP_PROJECT_ID
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+JOB_FILE=$(mktemp)
+trap 'unlink "$JOB_FILE"' EXIT
+python "$SCRIPT_DIR/render-sql-job.py" > "$JOB_FILE"
 
-ARGS=(
-  run jobs deploy "${JOB_NAME}"
-  --project="${GCP_PROJECT_ID}"
-  --region="${REGION}"
-  --image="${IMAGE}"
-  --command=flask
-  --args=db,upgrade
-  --set-env-vars="FLASK_APP=api.app:create_app,FLASK_ENV=production,DATABASE_URL=${DATABASE_URL},ENABLE_DEV_LOGIN=false"
-  --max-retries=1
-  --task-timeout=10m
-  --cpu=1
-  --memory=512Mi
-)
+gcloud run jobs replace "$JOB_FILE" --project="$GCP_PROJECT_ID" --region="$REGION" --quiet
 
-if [[ -n "${SERVICE_ACCOUNT:-}" ]]; then
-  ARGS+=(--service-account="${SERVICE_ACCOUNT}")
-fi
-if [[ -n "${VPC_CONNECTOR:-}" ]]; then
-  ARGS+=(--vpc-connector="${VPC_CONNECTOR}" --vpc-egress=private-ranges-only)
-fi
-if [[ -n "${CLOUD_SQL_INSTANCE:-}" ]]; then
-  ARGS+=(--set-cloudsql-instances="${CLOUD_SQL_INSTANCE}")
-fi
-
-echo "Upserting Cloud Run Job ${JOB_NAME}"
-gcloud "${ARGS[@]}"
-
-echo "Executing migration job…"
-gcloud run jobs execute "${JOB_NAME}" \
-  --project="${GCP_PROJECT_ID}" \
-  --region="${REGION}" \
-  --wait
-
-echo "Migrations finished."
+gcloud run jobs execute "$JOB_NAME" --project="$GCP_PROJECT_ID" --region="$REGION" --wait --quiet

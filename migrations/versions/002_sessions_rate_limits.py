@@ -9,10 +9,9 @@ use IF NOT EXISTS so the migrate Job stays safe either way.
 """
 
 from alembic import op
-import sqlalchemy as sa
 
-revision = "002_sessions_rate_limits"
-down_revision = "001_portal_schema"
+revision = '002_sessions_rate_limits'
+down_revision = '001_portal_schema'
 branch_labels = None
 depends_on = None
 
@@ -29,9 +28,7 @@ def upgrade():
         )
         """
     )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_sessions_expiry ON sessions (expiry)"
-    )
+    op.execute('CREATE INDEX IF NOT EXISTS ix_sessions_expiry ON sessions (expiry)')
 
     op.execute(
         """
@@ -42,14 +39,11 @@ def upgrade():
         )
         """
     )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_rate_limit_buckets_expires_at "
-        "ON rate_limit_buckets (expires_at)"
-    )
+    op.execute('CREATE INDEX IF NOT EXISTS ix_rate_limit_buckets_expires_at ON rate_limit_buckets (expires_at)')
 
 
 def downgrade():
-    op.execute("DROP INDEX IF EXISTS ix_rate_limit_buckets_expires_at")
-    op.execute("DROP TABLE IF EXISTS rate_limit_buckets")
-    op.execute("DROP INDEX IF EXISTS ix_sessions_expiry")
-    op.execute("DROP TABLE IF EXISTS sessions")
+    op.execute('DROP INDEX IF EXISTS ix_rate_limit_buckets_expires_at')
+    op.execute('DROP TABLE IF EXISTS rate_limit_buckets')
+    op.execute('DROP INDEX IF EXISTS ix_sessions_expiry')
+    op.execute('DROP TABLE IF EXISTS sessions')
