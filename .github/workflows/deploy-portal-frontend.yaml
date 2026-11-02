@@ -1,4 +1,4 @@
-name: Deploy Extraction Frontend
+name: Deploy Extraction Portal (Frontend)
 
 on:
   push:
