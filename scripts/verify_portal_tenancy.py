@@ -48,16 +48,19 @@ def main() -> int:
     from api.models import Integration, Organization, User
     from api.tenancy import TenancyError, require_matching_org
 
-    step("Config: Redis URL + multi-tenant SSO authority")
-    if not (Config.REDIS_URL or "").strip():
-        fail("REDIS_URL must be set for multi-instance sessions")
+    step("Config: shared session backend + multi-tenant SSO authority")
+    backend = (Config.SESSION_BACKEND or "sqlalchemy").strip().lower()
+    if backend == "redis" and not (Config.REDIS_URL or "").strip():
+        fail("REDIS_URL must be set when SESSION_BACKEND=redis")
+    if backend not in {"sqlalchemy", "redis"}:
+        fail(f"SESSION_BACKEND must be sqlalchemy or redis, got {backend!r}")
     authority = (Config.MS_AUTHORITY or "").rstrip("/")
     if not authority.endswith("/organizations"):
         fail(
             "MS_AUTHORITY should use /organizations for multi-tenant SSO, "
             f"got {Config.MS_AUTHORITY!r}"
         )
-    ok(f"REDIS_URL set; MS_AUTHORITY={authority}")
+    ok(f"SESSION_BACKEND={backend}; MS_AUTHORITY={authority}")
 
     app = create_app()
     client = app.test_client()

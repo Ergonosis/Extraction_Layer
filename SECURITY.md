@@ -11,17 +11,19 @@ flask db upgrade
 
 Use `DATABASE_URL` in `.env` if needed. Local default is `postgresql://portal:portal@localhost:5434/portal` (Docker `extraction-portal-postgres`). Do not use ports 5432/5433. Production uses Cloud SQL.
 
-## Redis (sessions + rate limits)
+## Sessions + rate limits (issue #56)
 
-Local default: Docker container `extraction-portal-redis` on host port **6379**.
+**Default:** PostgreSQL-backed Flask-Session (`SESSION_BACKEND=sqlalchemy`) and flask-limiter storage (`RATELIMIT_STORAGE_BACKEND=sqlalchemy`). Shared Cloud SQL keeps login state and rate-limit counters consistent across Cloud Run instances. Tables: `sessions`, `rate_limit_buckets` (Alembic `002_sessions_rate_limits`).
+
+Production cookie name should be `__session` so Firebase Hosting forwards it to Cloud Run.
+
+**Redis fallback:** set `SESSION_BACKEND=redis` and/or `RATELIMIT_STORAGE_BACKEND=redis` with `REDIS_URL` if PostgreSQL rate-limit equivalence checks fail. Local Redis example:
 
 ```bash
 docker run -d --name extraction-portal-redis -p 6379:6379 redis:7-alpine
 ```
 
-`REDIS_URL` defaults to `redis://localhost:6379/0`. Flask-Session and flask-limiter both use this Redis. Production should point `REDIS_URL` at Memorystore (or equivalent), not a laptop container.
-
-**Scale note:** multiple Cloud Run instances require shared Redis sessions. Without Redis, sticky sessions alone will not keep logins consistent across instances.
+Never use process-local `memory://` rate-limit counters in multi-instance deployments.
 
 ## Multi-organization tenancy (issue #30)
 
@@ -57,10 +59,12 @@ Rough monthly GCP cost for the portal stack (Cloud Run + Cloud SQL + Redis/Memor
 
 Production checklist for multi-instance scale:
 
-- [ ] `REDIS_URL` points at Memorystore (shared sessions + rate limits)
-- [ ] `DATABASE_URL` points at Cloud SQL (shared schema; org isolation in queries)
+- [ ] `DATABASE_URL` points at Cloud SQL (business data + sessions + rate limits)
+- [ ] `SESSION_BACKEND=sqlalchemy` and `RATELIMIT_STORAGE_BACKEND=sqlalchemy` (or documented Redis fallback)
+- [ ] `SESSION_COOKIE_NAME=__session` when using Firebase Hosting
 - [ ] Secrets via Secret Manager (`USE_GCP_SECRETS=true`)
 - [ ] `MS_TENANT_ALLOWLIST` set if you must restrict which companies can sign in
+- [ ] SQLAlchemy pool caps fit Cloud SQL connection budget
 
 ```bash
 python scripts/verify_portal_tenancy.py
@@ -74,20 +78,20 @@ Build/push/migrate/deploy tooling lives under `deploy/` (Dockerfile at repo root
 
 App-layer cookies/CSRF/rate limits/Fernet are covered by #20 / #28. This section covers **network posture, SPA CSP, audit logs, and monitoring**. Cloud Armor / WAF is **deferred** (see below).
 
-### Private Redis + Cloud SQL
+### Private Cloud SQL (+ optional Redis)
 
 | Resource | Production pattern |
 |---|---|
-| Cloud SQL | Private IP **or** Unix socket via Cloud SQL connector: `postgresql://USER:PASS@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE` |
-| Memorystore | Private VPC IP, e.g. `redis://10.x.x.x:6379/0` (enable AUTH when available); **not** a public `:6379` |
-| Cloud Run | Serverless VPC Access connector + `--vpc-egress=private-ranges-only` so the service can reach SQL/Redis |
+| Cloud SQL | Unix socket via Cloud Run built-in connector: `postgresql://USER:PASS@/DB?host=/cloudsql/PROJECT:REGION:INSTANCE` (first-launch default). Private IP / Direct VPC egress if mandatory. |
+| Memorystore | Only if Redis backends are selected; private VPC IP, not a public `:6379` |
+| Cloud Run | `--add-cloudsql-instances=…`; VPC connector only when Redis/private networking requires it |
 | Secrets | `USE_GCP_SECRETS=true`, runtime SA with `roles/secretmanager.secretAccessor` + `roles/cloudsql.client` only |
 
-TLS terminates at Cloud Run / HTTPS load balancer. Production boot requires `SESSION_COOKIE_SECURE=true` (see `api/app.py`). Never set `ENABLE_DEV_LOGIN` in production.
+TLS terminates at Cloud Run / HTTPS load balancer (or Firebase Hosting in front). Production boot requires `SESSION_COOKIE_SECURE=true` (see `api/app.py`). Never set `ENABLE_DEV_LOGIN` in production.
 
 ### Content-Security-Policy (SPA)
 
-Because the SPA is served from the same Cloud Run origin (`PORTAL_STATIC_DIR`), Flask sets CSP on every response in `api/middleware.py`.
+Prefer Firebase Hosting headers in `firebase.json` for the static SPA. Flask still sets CSP on API/SPA responses in `api/middleware.py` when `PORTAL_STATIC_DIR` is used (legacy) or for API-adjacent HTML.
 
 | `CSP_MODE` | Behavior |
 |---|---|

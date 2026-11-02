@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# Deploy the portal API (+ SPA) image to Cloud Run.
+# Deploy the API-only image to Cloud Run (SPA is on Firebase Hosting).
 # Prerequisites: gcloud auth, Artifact Registry image already built, secrets created,
-# Cloud SQL + Memorystore reachable (VPC connector), service account with Secret Manager access.
+# Cloud SQL attached (built-in Auth Proxy socket). Redis/VPC connector are optional
+# fallbacks when SESSION_BACKEND/RATELIMIT_STORAGE_BACKEND=redis.
 #
 # Required env:
-#   GCP_PROJECT_ID, REGION, SERVICE_NAME, VPC_CONNECTOR
+#   GCP_PROJECT_ID, REGION, SERVICE_NAME
 #   CLOUD_SQL_INSTANCE   (project:region:instance)
-#   DATABASE_URL         (Cloud SQL Postgres URL; prefer secret or private IP)
-#   REDIS_URL            (Memorystore URL)
-#   PORTAL_URL           (https://… Cloud Run URL or custom domain)
+#   DATABASE_URL         (Cloud SQL Postgres URL; prefer /cloudsql/… socket)
+#   PORTAL_URL           (https://… Firebase Hosting URL or custom domain)
 #   MS_CLIENT_ID, MS_REDIRECT_URI, MS_GRAPH_REDIRECT_URI
 #   CORS_ORIGINS         (usually same as PORTAL_URL)
 #
@@ -16,6 +16,8 @@
 #   IMAGE                (full image URI; default Artifact Registry latest)
 #   AR_REPO, IMAGE_NAME  (defaults: portal / extraction-portal)
 #   SERVICE_ACCOUNT      (runtime SA email)
+#   SESSION_BACKEND, RATELIMIT_STORAGE_BACKEND  (default: sqlalchemy)
+#   REDIS_URL, VPC_CONNECTOR  (only if using redis backends)
 #   MS_TENANT_ALLOWLIST, PLAID_ENV, PLAID_CLIENT_ID
 #   SECRET_KEY_SECRET, FERNET_KEY_SECRET, MS_CLIENT_SECRET_SECRET, PLAID_SECRET_SECRET
 #     (Secret Manager secret *ids*; default to SECRET_KEY, FERNET_KEY, …)
@@ -26,7 +28,6 @@ set -euo pipefail
 : "${REGION:?set REGION (e.g. us-central1)}"
 : "${SERVICE_NAME:?set SERVICE_NAME (e.g. extraction-portal)}"
 : "${DATABASE_URL:?set DATABASE_URL}"
-: "${REDIS_URL:?set REDIS_URL}"
 : "${PORTAL_URL:?set PORTAL_URL}"
 : "${MS_CLIENT_ID:?set MS_CLIENT_ID}"
 : "${MS_REDIRECT_URI:?set MS_REDIRECT_URI}"
@@ -37,10 +38,16 @@ IMAGE_NAME="${IMAGE_NAME:-extraction-portal}"
 IMAGE="${IMAGE:-${REGION}-docker.pkg.dev/${GCP_PROJECT_ID}/${AR_REPO}/${IMAGE_NAME}:latest}"
 CORS_ORIGINS="${CORS_ORIGINS:-${PORTAL_URL}}"
 PLAID_ENV="${PLAID_ENV:-sandbox}"
+SESSION_BACKEND="${SESSION_BACKEND:-sqlalchemy}"
+RATELIMIT_STORAGE_BACKEND="${RATELIMIT_STORAGE_BACKEND:-sqlalchemy}"
 SECRET_KEY_SECRET="${SECRET_KEY_SECRET:-SECRET_KEY}"
 FERNET_KEY_SECRET="${FERNET_KEY_SECRET:-FERNET_KEY}"
 MS_CLIENT_SECRET_SECRET="${MS_CLIENT_SECRET_SECRET:-MS_CLIENT_SECRET}"
 PLAID_SECRET_SECRET="${PLAID_SECRET_SECRET:-PLAID_SECRET}"
+
+if [[ "${SESSION_BACKEND}" == "redis" || "${RATELIMIT_STORAGE_BACKEND}" == "redis" ]]; then
+  : "${REDIS_URL:?set REDIS_URL when using redis session or rate-limit backend}"
+fi
 
 ENV_VARS=(
   "FLASK_ENV=production"
@@ -48,9 +55,11 @@ ENV_VARS=(
   "GCP_PROJECT_ID=${GCP_PROJECT_ID}"
   "ENABLE_DEV_LOGIN=false"
   "SESSION_COOKIE_SECURE=true"
-  "PORTAL_STATIC_DIR=/app/portal_dist"
+  "SESSION_COOKIE_NAME=__session"
+  "SESSION_BACKEND=${SESSION_BACKEND}"
+  "RATELIMIT_STORAGE_BACKEND=${RATELIMIT_STORAGE_BACKEND}"
+  "PORTAL_STATIC_DIR="
   "DATABASE_URL=${DATABASE_URL}"
-  "REDIS_URL=${REDIS_URL}"
   "PORTAL_URL=${PORTAL_URL}"
   "PORTAL_POST_LOGIN_PATH=/connections"
   "CORS_ORIGINS=${CORS_ORIGINS}"
@@ -61,11 +70,20 @@ ENV_VARS=(
   "PLAID_ENV=${PLAID_ENV}"
 )
 
+if [[ -n "${REDIS_URL:-}" ]]; then
+  ENV_VARS+=("REDIS_URL=${REDIS_URL}")
+fi
 if [[ -n "${MS_TENANT_ALLOWLIST:-}" ]]; then
   ENV_VARS+=("MS_TENANT_ALLOWLIST=${MS_TENANT_ALLOWLIST}")
 fi
 if [[ -n "${PLAID_CLIENT_ID:-}" ]]; then
   ENV_VARS+=("PLAID_CLIENT_ID=${PLAID_CLIENT_ID}")
+fi
+if [[ -n "${DB_POOL_SIZE:-}" ]]; then
+  ENV_VARS+=("DB_POOL_SIZE=${DB_POOL_SIZE}")
+fi
+if [[ -n "${DB_MAX_OVERFLOW:-}" ]]; then
+  ENV_VARS+=("DB_MAX_OVERFLOW=${DB_MAX_OVERFLOW}")
 fi
 
 # Join ENV_VARS with commas for gcloud
@@ -87,6 +105,7 @@ ARGS=(
   --port=8080
   --cpu=1
   --memory=512Mi
+  --concurrency=8
   --min-instances=0
   --max-instances=10
   --set-env-vars="${ENV_JOINED}"
@@ -109,4 +128,5 @@ gcloud "${ARGS[@]}"
 URL="$(gcloud run services describe "${SERVICE_NAME}" --project="${GCP_PROJECT_ID}" --region="${REGION}" --format='value(status.url)')"
 echo "Deployed: ${URL}"
 echo "Health:   ${URL}/api/health"
-echo "Remember: PORTAL_URL / MS_* redirect URIs / CORS_ORIGINS should match this URL (or your custom domain)."
+echo "Remember: PORTAL_URL / MS_* redirect URIs / CORS_ORIGINS should match the Firebase Hosting domain."
+echo "Frontend: npm ci && npm run build in portal/, then firebase deploy --only hosting"

@@ -14,13 +14,32 @@ def _redis_client():
 
 
 def _delete_store_key(sid: str | None) -> None:
+    """Remove a server-side session record (SQLAlchemy or Redis backend)."""
     if not sid:
         return
     key_prefix = current_app.config.get("SESSION_KEY_PREFIX", "session:")
+    store_key = f"{key_prefix}{sid}"
+    interface = current_app.session_interface
+
+    # Flask-Session SQLAlchemy backend
+    model = getattr(interface, "sql_session_model", None)
+    if model is not None:
+        from api.extensions import db
+
+        try:
+            db.session.query(model).filter_by(session_id=store_key).delete(
+                synchronize_session=False
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        return
+
+    # Redis backend
     try:
         redis_client = _redis_client()
         if redis_client is not None:
-            redis_client.delete(f"{key_prefix}{sid}")
+            redis_client.delete(store_key)
     except Exception:
         pass
 

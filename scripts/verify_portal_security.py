@@ -34,7 +34,14 @@ def fail(msg: str) -> None:
 
 
 def check_redis_container() -> None:
-    step("Docker Redis container")
+    from api.config import Config
+
+    step("Shared-state backend readiness")
+    backend = (Config.SESSION_BACKEND or "sqlalchemy").strip().lower()
+    if backend != "redis":
+        ok(f"SESSION_BACKEND={backend} (Redis container not required)")
+        return
+
     ps = subprocess.run(
         [
             "docker",
@@ -65,18 +72,24 @@ def check_redis_container() -> None:
 
 
 def check_config() -> None:
-    step("Config REDIS_URL and session flags")
+    step("Config session flags and shared-state backend")
     from api.config import Config
 
-    if "6379" not in Config.REDIS_URL:
-        fail(f"REDIS_URL should target local Redis, got {Config.REDIS_URL}")
+    backend = (Config.SESSION_BACKEND or "").strip().lower()
+    if backend not in {"sqlalchemy", "redis"}:
+        fail(f"SESSION_BACKEND must be sqlalchemy or redis, got {backend!r}")
+    if backend == "redis" and "6379" not in (Config.REDIS_URL or ""):
+        fail(f"REDIS_URL should target local Redis when SESSION_BACKEND=redis, got {Config.REDIS_URL}")
     if not Config.SESSION_COOKIE_HTTPONLY:
         fail("SESSION_COOKIE_HTTPONLY must be True")
     if Config.SESSION_COOKIE_SAMESITE != "Lax":
         fail("SESSION_COOKIE_SAMESITE must be Lax")
     if Config.PERMANENT_SESSION_LIFETIME.total_seconds() != 8 * 3600:
         fail("PERMANENT_SESSION_LIFETIME must be 8 hours")
-    ok(f"REDIS_URL={Config.REDIS_URL}; Secure={Config.SESSION_COOKIE_SECURE}")
+    ok(
+        f"SESSION_BACKEND={backend}; RATELIMIT={Config.RATELIMIT_STORAGE_BACKEND}; "
+        f"Secure={Config.SESSION_COOKIE_SECURE}"
+    )
 
 
 def check_headers_csrf_rate_limit() -> None:
@@ -129,12 +142,25 @@ def check_headers_csrf_rate_limit() -> None:
 
 
 def check_redis_session_key() -> None:
-    step("Session key written to Redis")
     from api.app import create_app
+    from api.config import Config
 
+    backend = (Config.SESSION_BACKEND or "sqlalchemy").strip().lower()
+    step("Session persisted server-side")
     app = create_app()
     client = app.test_client()
     client.get("/api/auth/csrf-token")
+
+    if backend != "redis":
+        from api.extensions import db
+        from sqlalchemy import text
+
+        with app.app_context():
+            count = db.session.execute(text("SELECT count(*) FROM sessions")).scalar()
+        if not count:
+            fail("sessions table empty after creating a CSRF session")
+        ok(f"sessions rows={count}")
+        return
 
     keys = subprocess.run(
         ["docker", "exec", REDIS_CONTAINER, "redis-cli", "KEYS", "portal:session:*"],
