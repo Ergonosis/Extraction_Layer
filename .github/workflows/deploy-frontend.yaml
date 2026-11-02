@@ -18,37 +18,113 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-26.04
-    timeout-minutes: 15
+    timeout-minutes: 10
+
     permissions:
-      contents: read
-      id-token: write
+      contents: 'read' # Required to checkout the code
+      id-token: 'write' # Required to request the JWT / OIDC token
+
+    env:
+      GCP_PROJECT_ID: # assigned at runtime
+      SLACK_MEMBER_ID: # assigned at runtime
+      GIT_COMMIT_MSG: # assigned at runtime
+      ACTIONS_CACHE_SERVICE_V2: '1'
+      WORKLOAD_IDENTITY_PROVIDER: # assigned at runtime
+      SLACK_MEMBER_ID_MAPPING_JSON_PATH: '.github/workflows/slack-member-id-mapping.json'
+      DEPLOYMENT_NAME: 'Extraction Portal (FE)'
+      DEPLOYMENT_SIZE: # assigned at runtime
+
     steps:
-      - uses: actions/checkout@v7
-      - name: Load deployment environment
+      - name: Checkout repo
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Resolve Slack Member ID
+        if: ${{ always() }}
+        run: |
+          username_hash=$(printf '%s' "${{ github.triggering_actor }}" | tr '[:upper:]' '[:lower:]' | sha256sum | cut -d ' ' -f1)
+          slack_member_id=$(jq -r --arg key "$username_hash" '.[$key] // empty' "${{ env.SLACK_MEMBER_ID_MAPPING_JSON_PATH }}")
+          [[ -z "$slack_member_id" ]] || echo "::add-mask::$slack_member_id"
+          echo "SLACK_MEMBER_ID=$slack_member_id" >> "$GITHUB_ENV"
+
+      - name: Load environment
         run: grep -v '^#' .env.dev | grep -v '^[[:space:]]*$' >> "$GITHUB_ENV"
-      - name: Authenticate with GCP
+
+      - name: Auth GitHub Actions with GCP
         uses: google-github-actions/auth@v3
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
-      - name: Check the API is Ready before publishing its rewrite
-        run: |
-          set -euo pipefail
-          read -r CREATED READY < <(gcloud run services describe "$PORTAL_GCP_CLOUD_RUN_SERVICE" \
-            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --quiet \
-            --format='value(status.latestCreatedRevisionName,status.latestReadyRevisionName)')
-          test -n "$READY"
-          test "$CREATED" = "$READY"
-          URL=$(gcloud run services describe "$PORTAL_GCP_CLOUD_RUN_SERVICE" \
-            --project="$GCP_PROJECT_ID" --region="$GCP_REGION" --format='value(status.url)')
-          curl --fail --show-error --silent "$URL/api/health" > /dev/null
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: '1.4.4'
-      - name: Build static files
+
+      - uses: oven-sh/setup-bun@v2.2.0
+
+      - name: Build FE
         working-directory: portal
         run: |
           bun install --frozen-lockfile
           bun run build
+          echo "DEPLOYMENT_SIZE=$(du -sh ./dist)" >> "$GITHUB_ENV"
+
       - name: Publish Hosting only
-        run: bunx firebase-tools deploy --only hosting --project "$GCP_PROJECT_ID" --non-interactive
+        run: bunx --bun firebase-tools deploy --only hosting --project "${{ env.GCP_PROJECT_ID }}" --non-interactive
+
+      - name: Notify Slack
+        if: ${{ always() }}
+        uses: slackapi/slack-github-action@v4
+        with:
+          errors: 'true'
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} ${{ env.DEPLOYMENT_NAME }} deployment ${{ job.status }}",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "${{ job.status == 'success' && ':white_check_mark:' || ':x:' }} *[${{ job.status }}]* — *${{ env.DEPLOYMENT_NAME }}*"
+                  }
+                },
+                {
+                  "type": "section",
+                  "fields": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Event:* ${{ github.event_name }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Branch:* `${{ github.ref_name }}`"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Commit:* <${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }}|${{ github.sha }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Size:* ${{ env.DEPLOYMENT_SIZE }}"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Workflow Run:* <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|#${{ github.run_id }}>"
+                    },
+                    {
+                      "type": "mrkdwn",
+                      "text": "*Message:* ${{ env.GIT_COMMIT_MSG }}"
+                    }
+                  ]
+                },
+                {
+                  "type": "context",
+                  "elements": [
+                    {
+                      "type": "mrkdwn",
+                      "text": "👤 *Triggered by:* <${{ github.server_url }}/${{ github.triggering_actor }}|${{ github.triggering_actor }}> ${{ env.SLACK_MEMBER_ID != '' && format('<@{0}>', env.SLACK_MEMBER_ID) || '(No Slack Member ID)' }}"
+                    }
+                  ]
+                },
+                { "type": "divider" }
+              ]
+            }
