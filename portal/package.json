@@ -10,7 +10,7 @@
     "lint:fix": "bun lint --fix --fix-suggestions",
     "lint:fix:danger": "bun run lint:fix --fix-dangerously",
     "preview": "vite preview",
-    "preinstall": "npx only-allow bun",
+    "preinstall": "npx --yes only-allow bun",
     "prepare": "cd \"$(git rev-parse --show-toplevel)\" && npx --yes simple-git-hooks"
   },
   "dependencies": {
@@ -30,9 +30,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
     "vite": "^8.3.5"
-  },
-  "allowScripts": {
-    "fsevents@2.3.3": true
   },
   "devEngines": {
     "packageManager": {
