@@ -67,7 +67,7 @@ jobs:
           echo "DEPLOYMENT_SIZE=$(du -sh ./dist)" >> "$GITHUB_ENV"
 
       - name: Publish Hosting only
-        run: bunx firebase-tools deploy --only hosting --project "${{ env.GCP_PROJECT_ID }}" --non-interactive
+        run: bunx firebase-tools deploy --only hosting --project "${{ env.GCP_PROJECT_ID }}" --non-interactive --debug
 
       - name: Notify Slack
         if: ${{ always() }}
