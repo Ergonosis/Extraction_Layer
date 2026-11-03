@@ -47,7 +47,7 @@ jobs:
       ACTIONS_CACHE_SERVICE_V2: '1'
       WORKLOAD_IDENTITY_PROVIDER: # assigned at runtime
       SLACK_MEMBER_ID_MAPPING_JSON_PATH: '.github/workflows/slack-member-id-mapping.json'
-      GCP_SERVICE_ACC_NAME: # assigned at runtime
+      GCP_SERVICE_SA_NAME: # assigned at runtime
       CLOUD_SQL_INSTANCE: # assigned at runtime
 
     steps:
@@ -169,7 +169,7 @@ jobs:
       - name: Create schema with the API image digest
         env:
           REGION: ${{ env.GCP_REGION }}
-          SERVICE_ACCOUNT: ${{ env.GCP_SERVICE_ACC_NAME }}
+          SERVICE_ACCOUNT: ${{ env.GCP_SERVICE_SA_NAME }}
           IMAGE: ${{ env.DOCKER_IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}
         run: bash deploy/migrate-cloud-run-job.sh
 

@@ -26,6 +26,7 @@ jobs:
 
     env:
       GCP_PROJECT_ID: # assigned at runtime
+      FIREBASE_DEPLOY_SA_NAME: # assigned at runtime
       SLACK_MEMBER_ID: # assigned at runtime
       GIT_COMMIT_MSG: # assigned at runtime
       ACTIONS_CACHE_SERVICE_V2: '1'
@@ -56,6 +57,7 @@ jobs:
         with:
           project_id: ${{ env.GCP_PROJECT_ID }}
           workload_identity_provider: ${{ env.WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ env.FIREBASE_DEPLOY_SA_NAME }}
 
       - uses: oven-sh/setup-bun@v2.2.0
 
