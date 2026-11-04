@@ -1,10 +1,12 @@
+import { spawn } from 'node:child_process'
+
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig } from 'vite'
+import { defineConfig, type ResolvedConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [tailwindcss(), react({ compiler: { reportDiagnostics: true } })],
+  plugins: [tailwindcss(), react({ compiler: { reportDiagnostics: true } }), compressHTML()],
   server: {
     // 5173 is commonly used by other local apps; portal owns 5175.
     port: 5175,
@@ -27,3 +29,21 @@ export default defineConfig({
   },
   resolve: { alias: { '@': '/src' }, dedupe: ['react', 'react-dom'] },
 })
+
+function compressHTML() {
+  let viteConfig: ResolvedConfig
+  return {
+    name: 'vite-plugin-compress-html',
+    configResolved(cfg: typeof viteConfig) {
+      viteConfig = cfg
+    },
+    closeBundle() {
+      spawn('bunx', ['html-minifier-next', '--input-dir=.', '--output-dir=.', '--preset=comprehensive'], {
+        shell: false,
+        env: { ...process.env },
+        stdio: 'inherit',
+        cwd: viteConfig.build.outDir,
+      })
+    },
+  }
+}
