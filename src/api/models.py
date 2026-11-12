@@ -21,6 +21,17 @@ class PortalSession(db.Model):
     expiry = db.Column(db.DateTime)
 
 
+class SessionRevocation(db.Model):
+    """Tombstone so a stale request cannot recreate a logged-out SID."""
+
+    __tablename__ = 'session_revocations'
+    __table_args__ = (db.Index('ix_session_revocations_expires_at', 'expires_at'),)
+
+    store_id = db.Column(db.String(255), primary_key=True)
+    revoked_at = db.Column(db.DateTime, nullable=False)
+    expires_at = db.Column(db.DateTime, nullable=False)
+
+
 class RateLimitBucket(db.Model):
     __tablename__ = 'rate_limit_buckets'
     __table_args__ = (db.Index('ix_rate_limit_buckets_expires_at', 'expires_at'),)

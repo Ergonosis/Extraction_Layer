@@ -5,7 +5,7 @@ on:
     branches:
       - main
     paths:
-      - '.github/workflows/deploy-backend.yaml'
+      - '.github/workflows/deploy-portal-backend.yaml'
       - '.dockerignore'
       - '.env.dev'
       - '.python-version'
@@ -98,6 +98,15 @@ jobs:
 
       - name: Verify dependency lock
         run: uv lock --check
+
+      - name: Install locked development environment
+        run: uv sync --locked --all-extras --group dev
+
+      - name: Run unit tests before image build
+        run: uv run --locked python -m pytest
+
+      - name: Ruff critical rules before image build
+        run: uv run --locked ruff check --select E9,F63,F7,F82 src scripts tests
 
       - name: Auth GitHub Actions with GCP
         uses: google-github-actions/auth@v3

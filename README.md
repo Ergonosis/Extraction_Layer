@@ -217,7 +217,11 @@ uv run python -m tests.integration.verify_portal_tenancy
 ## Deploy to GCP
 
 Production deployment uses GitHub Actions with keyless GCP authentication and
-an immutable Cloud Run image digest.
+an immutable Cloud Run image digest. Full runbook (workflows, migrate Job,
+Firebase Hosting, Portal Entra app): **[docs/deploy-gcp.md](docs/deploy-gcp.md)**.
+
+Use a **dedicated multi-tenant Entra app** for the Portal. Do not reuse or
+modify the shared `Ergonosis_data_getter` job registration.
 
 ---
 

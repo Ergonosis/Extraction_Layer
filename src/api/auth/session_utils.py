@@ -10,9 +10,15 @@ from flask import current_app, session
 
 def _delete_store_key(sid: str | None) -> None:
     """Revoke a stored session; backend failure must not look like successful logout."""
-    if sid:
-        interface = current_app.session_interface
-        interface._delete_session(interface._get_store_id(sid))
+    if not sid:
+        return
+    interface = current_app.session_interface
+    store_id = interface._get_store_id(sid)
+    revoke = getattr(interface, '_revoke_session', None)
+    if revoke is not None:
+        revoke(store_id)
+    else:
+        interface._delete_session(store_id)
 
 
 def regenerate_session() -> None:

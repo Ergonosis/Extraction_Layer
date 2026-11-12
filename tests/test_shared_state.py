@@ -86,10 +86,10 @@ def test_revocation_uses_the_backend_store_key_and_propagates_failure():
     app.session_interface = interface
     with app.app_context():
         session_utils._delete_store_key(None)
-        interface._delete_session.assert_not_called()
+        interface._revoke_session.assert_not_called()
         session_utils._delete_store_key('old')
-        interface._delete_session.assert_called_once_with('portal:session:old')
-        interface._delete_session.side_effect = RuntimeError('Storage unavailable')
+        interface._revoke_session.assert_called_once_with('portal:session:old')
+        interface._revoke_session.side_effect = RuntimeError('Storage unavailable')
         with pytest.raises(RuntimeError, match='Storage unavailable'):
             session_utils._delete_store_key('old')
 

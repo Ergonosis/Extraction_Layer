@@ -8,7 +8,7 @@ on:
       - 'firebase.json'
       - '.firebaserc'
       - '.env.dev'
-      - '.github/workflows/deploy-frontend.yaml'
+      - '.github/workflows/deploy-portal-frontend.yaml'
   workflow_dispatch:
 
 concurrency:
