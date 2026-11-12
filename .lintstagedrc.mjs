@@ -31,7 +31,7 @@ export let getNpxCmd = () => {
 }
 
 export default {
-  '**/!(*.py)': 'bun fmt',
+  '**/!(*.lock|*.py|*.toml)': 'bun fmt',
   '{pyproject.toml,uv.lock}': () => 'uv lock --check',
   '**/*.py': [
     'uv run --locked ruff check --fix',
