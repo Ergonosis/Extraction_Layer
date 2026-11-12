@@ -30,7 +30,7 @@ export function FileUploadPage() {
       return
     }
     if (!token) {
-      setError('Enter an access token.')
+      setError('Enter the MCP server access token.')
       return
     }
 
@@ -98,7 +98,7 @@ export function FileUploadPage() {
           <input className={inputClassName} id='upload-file' name='file' type='file' accept='.csv,text/csv' required />
 
           <label className='font-semibold' htmlFor='upload-token'>
-            Access token
+            MCP server Access token
           </label>
           <input
             className={inputClassName}
