@@ -1,8 +1,15 @@
 import { spawn } from 'node:child_process'
+import { readFileSync } from 'node:fs'
+import path from 'node:path'
+import { parseEnv } from 'node:util'
 
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig, type ResolvedConfig } from 'vite'
+
+const __dirname = import.meta.dirname
+const envContent = readFileSync(path.join(__dirname, '../.env.dev'), 'utf8')
+const parsedEnv = parseEnv(envContent)
 
 // https://vite.dev/config/
 export default defineConfig({
@@ -28,6 +35,7 @@ export default defineConfig({
     },
   },
   resolve: { alias: { '@': '/src' }, dedupe: ['react', 'react-dom'] },
+  define: { __UNIFICATION_MCP_SERVER_URL__: parsedEnv['UNIFICATION_MCP_SERVER_URL'] },
 })
 
 function compressHTML() {
