@@ -1,2 +1,2 @@
-required-version = ">=0.12.11"
+required-version = ">=0.13.4"  # emSign leak
 preview-features = ["content-addressed-cache"]
