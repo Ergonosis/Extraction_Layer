@@ -44,7 +44,7 @@ class PortalSessionInterface(SqlAlchemySessionInterface):
         row = SessionRevocation.query.filter_by(store_id=store_id).first()
         if row is None:
             return False
-        if row.expires_at is not None and row.expires_at <= datetime.now(tz=UTC):
+        if row.expires_at is not None and row.expires_at <= datetime.now(tz=UTC).replace(tzinfo=None):
             return False
         return True
 
@@ -73,7 +73,7 @@ class PortalSessionInterface(SqlAlchemySessionInterface):
             return None
 
         record = self.sql_session_model.query.filter_by(session_id=store_id).first()
-        if record and (record.expiry is None or record.expiry <= datetime.now(tz=UTC)):
+        if record and (record.expiry is None or record.expiry <= datetime.now(tz=UTC).replace(tzinfo=None)):
             try:
                 self.client.session.delete(record)
                 self.client.session.commit()
