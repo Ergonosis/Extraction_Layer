@@ -13,4 +13,4 @@ line-ending = "lf"
 split-on-trailing-comma = false
 
 [lint]
-ignore = ["BLE001", "S110", "B017", "F541"]
+ignore = ["BLE001", "S110", "B017", "F541", "SIM103"]
