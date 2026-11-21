@@ -20,6 +20,8 @@ dependencies = [
     "python-dotenv==1.2.4",
     "redis==8.1.0",
     "requests==2.34.2",
+    "structlog~=26.1",
+    "structlog-gcp~=0.5",
 ]
 
 [dependency-groups]

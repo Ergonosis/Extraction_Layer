@@ -46,7 +46,7 @@ export const bunFmtSupportedExts = jsExts.concat([
   'json5',
   'yaml',
   'yml',
-  'toml',
+  // 'toml',
   'graphql',
 
   // Markdown & Templates
