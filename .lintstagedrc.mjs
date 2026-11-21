@@ -30,8 +30,33 @@ export let getNpxCmd = () => {
   return detectedCmd
 }
 
+export const jsExts = ['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts']
+export const bunFmtSupportedExts = jsExts.concat([
+  // Styles & Markup
+  'css',
+  'scss',
+  'less',
+  'html',
+  'svelte',
+  'vue',
+
+  // Data & Config
+  'json',
+  'jsonc',
+  'json5',
+  'yaml',
+  'yml',
+  'toml',
+  'graphql',
+
+  // Markdown & Templates
+  'md',
+  'mdx',
+  'mjml',
+])
+
 export default {
-  '**/!(*.{lock,py,toml})': 'bun fmt',
+  [`**/*.{${bunFmtSupportedExts.join(',')}}`]: 'bun fmt',
   '{pyproject.toml,uv.lock}': () => 'uv lock --check',
   '**/*.py': [
     'uv run --locked ruff check --fix',
