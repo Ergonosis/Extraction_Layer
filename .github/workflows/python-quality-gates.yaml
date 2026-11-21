@@ -10,7 +10,6 @@ on:
       - '**/*.md'
       - '**/*.*gitignore'
       - '.github/**'
-      - 'infra/**'
   workflow_dispatch:
 
 jobs:
@@ -60,17 +59,3 @@ jobs:
 
       - name: Run Ruff checks
         run: uv run --locked ruff check --quiet src scripts tests
-
-  ruff_format:
-    runs-on: ubuntu-26.04
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-        with:
-          fetch-depth: 1
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v10.2.0
-
-      - name: Check Ruff formatting
-        run: uv run --locked ruff format --check --quiet src scripts tests

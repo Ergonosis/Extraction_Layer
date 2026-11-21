@@ -126,7 +126,7 @@ def _parse_expiry(result: dict) -> datetime | None:
         return None
     try:
         return _utcnow() + timedelta(seconds=int(expires_in))
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         return None
 
 
