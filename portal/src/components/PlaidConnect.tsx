@@ -117,33 +117,35 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
   ])
 
   const onSuccess = useCallback<PlaidLinkOnSuccess>(
-    async (publicToken) => {
-      exchangeSucceededRef.current = true
-      setBusy(true)
-      try {
-        if (!publicToken) {
+    (publicToken) => {
+      void (async () => {
+        exchangeSucceededRef.current = true
+        setBusy(true)
+        try {
+          if (!publicToken) {
+            pushToast({
+              kind: 'error',
+              message: 'Plaid did not return a public token.',
+            })
+            exchangeSucceededRef.current = false
+            await resetToNotConnected()
+            return
+          }
+          const { integration: next } = await plaidExchange(publicToken)
+          onUpdated(next)
+          clearLocalLink()
+          pushToast({ kind: 'success', message: 'Plaid connected.' })
+        } catch (err) {
+          exchangeSucceededRef.current = false
           pushToast({
             kind: 'error',
-            message: 'Plaid did not return a public token.',
+            message: userFacingApiError(err, 'Could not finish Plaid connection.'),
           })
-          exchangeSucceededRef.current = false
           await resetToNotConnected()
-          return
+        } finally {
+          setBusy(false)
         }
-        const { integration: next } = await plaidExchange(publicToken)
-        onUpdated(next)
-        clearLocalLink()
-        pushToast({ kind: 'success', message: 'Plaid connected.' })
-      } catch (err) {
-        exchangeSucceededRef.current = false
-        pushToast({
-          kind: 'error',
-          message: userFacingApiError(err, 'Could not finish Plaid connection.'),
-        })
-        await resetToNotConnected()
-      } finally {
-        setBusy(false)
-      }
+      })()
     },
     [clearLocalLink, onUpdated, pushToast, resetToNotConnected],
   )

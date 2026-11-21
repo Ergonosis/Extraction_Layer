@@ -1,12 +1,11 @@
 # Deploy tooling
 
-See **[../docs/deploy-gcp.md](../docs/deploy-gcp.md)** for Firebase Hosting + API-only Cloud Run + Cloud SQL.
+- `check-cloud-sql-ready.sh`: validate configuration and Cloud SQL/secret metadata
+  before building; never enables APIs or reads secret values.
+- `migrate-cloud-run-job.sh`: run `flask db upgrade` using the API image digest.
+- `env.migrate.example`: manual schema Job variables; supply the actual digest.
+- `build-portal-local.sh` / `.ps1`: explicitly build the Firebase static bundle
+  with bun. These are not invoked by backend image builds.
 
-Quick pointers:
-
-- `cloudbuild.yaml` — build/push **API-only** image
-- `migrate-cloud-run-job.sh` — `flask db upgrade` (run before API traffic)
-- `deploy-cloud-run.sh` — Cloud Run API service (`__session`, sqlalchemy backends by default)
-- `build-portal-local.sh` / `.ps1` — build `portal/dist` for Firebase Hosting
-- `env.deploy.example` — copy to `env.deploy.local` (gitignored)
-- Root `firebase.json` — Hosting `/api/**` rewrite to Cloud Run
+The backend workflow owns schema-before-Service deployment. Frontend releases
+are separate; neither local builds nor cloud deployment run merely by editing files.

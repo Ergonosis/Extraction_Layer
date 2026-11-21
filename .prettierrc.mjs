@@ -1,4 +1,5 @@
 export default {
+  printWidth: 120,
   experimentalTernaries: true,
   experimentalOperatorPosition: 'start',
   semi: false,
