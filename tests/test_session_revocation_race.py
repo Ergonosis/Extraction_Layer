@@ -78,7 +78,7 @@ def test_stale_upsert_cannot_resurrect_revoked_session(revocation_app):
         try:
             with app.app_context():
                 interface._upsert_session(timedelta(hours=1), stale, store_id)
-        except BaseException as exc:  # noqa: BLE001 — capture for main thread
+        except BaseException as exc:
             upsert_errors.append(exc)
 
     worker = threading.Thread(target=run_stale_save)

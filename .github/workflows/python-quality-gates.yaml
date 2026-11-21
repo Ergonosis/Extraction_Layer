@@ -22,7 +22,7 @@ jobs:
           fetch-depth: 1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@v10.4.0
 
       # Fails if pyproject.toml changed without a matching committed uv.lock.
       - name: Verify dependency lock
@@ -38,7 +38,7 @@ jobs:
           fetch-depth: 1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@v10.4.0
 
       - name: Install locked development environment
         run: uv sync --locked --all-extras --group dev
@@ -55,7 +55,7 @@ jobs:
           fetch-depth: 1
 
       - name: Set up uv
-        uses: astral-sh/setup-uv@v10.2.0
+        uses: astral-sh/setup-uv@v10.4.0
 
       - name: Run Ruff checks
         run: uv run --locked ruff check --quiet src scripts tests
