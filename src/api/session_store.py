@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Optional
+from datetime import UTC, datetime, timedelta
 
 from flask import Flask, Request
 from flask.sessions import NullSession
@@ -37,19 +36,15 @@ class PortalSessionInterface(SqlAlchemySessionInterface):
             use_signer=app.config.get('SESSION_USE_SIGNER', Defaults.SESSION_USE_SIGNER),
             permanent=app.config.get('SESSION_PERMANENT', Defaults.SESSION_PERMANENT),
             sid_length=app.config.get('SESSION_ID_LENGTH', Defaults.SESSION_ID_LENGTH),
-            serialization_format=app.config.get(
-                'SESSION_SERIALIZATION_FORMAT', Defaults.SESSION_SERIALIZATION_FORMAT
-            ),
-            cleanup_n_requests=app.config.get(
-                'SESSION_CLEANUP_N_REQUESTS', Defaults.SESSION_CLEANUP_N_REQUESTS
-            ),
+            serialization_format=app.config.get('SESSION_SERIALIZATION_FORMAT', Defaults.SESSION_SERIALIZATION_FORMAT),
+            cleanup_n_requests=app.config.get('SESSION_CLEANUP_N_REQUESTS', Defaults.SESSION_CLEANUP_N_REQUESTS),
         )
 
     def _revocation_active(self, store_id: str) -> bool:
         row = SessionRevocation.query.filter_by(store_id=store_id).first()
         if row is None:
             return False
-        if row.expires_at is not None and row.expires_at <= datetime.utcnow():
+        if row.expires_at is not None and row.expires_at <= datetime.now(tz=UTC):
             return False
         return True
 
@@ -57,17 +52,13 @@ class PortalSessionInterface(SqlAlchemySessionInterface):
     def _revoke_session(self, store_id: str, ttl: timedelta | None = None) -> None:
         """Delete the live row and record a tombstone so later upserts cannot revive it."""
         lifetime = ttl if ttl is not None else self.app.permanent_session_lifetime
-        now = datetime.utcnow()
+        now = datetime.now(tz=UTC)
         expires_at = now + lifetime
         try:
-            self.sql_session_model.query.filter_by(session_id=store_id).delete(
-                synchronize_session=False
-            )
+            self.sql_session_model.query.filter_by(session_id=store_id).delete(synchronize_session=False)
             row = SessionRevocation.query.filter_by(store_id=store_id).first()
             if row is None:
-                self.client.session.add(
-                    SessionRevocation(store_id=store_id, revoked_at=now, expires_at=expires_at)
-                )
+                self.client.session.add(SessionRevocation(store_id=store_id, revoked_at=now, expires_at=expires_at))
             else:
                 row.revoked_at = now
                 row.expires_at = expires_at
@@ -77,12 +68,12 @@ class PortalSessionInterface(SqlAlchemySessionInterface):
             raise
 
     @retry_query()
-    def _retrieve_session_data(self, store_id: str) -> Optional[dict]:
+    def _retrieve_session_data(self, store_id: str) -> dict | None:
         if self._revocation_active(store_id):
             return None
 
         record = self.sql_session_model.query.filter_by(session_id=store_id).first()
-        if record and (record.expiry is None or record.expiry <= datetime.utcnow()):
+        if record and (record.expiry is None or record.expiry <= datetime.now(tz=UTC)):
             try:
                 self.client.session.delete(record)
                 self.client.session.commit()
@@ -97,13 +88,11 @@ class PortalSessionInterface(SqlAlchemySessionInterface):
         return None
 
     @retry_query()
-    def _upsert_session(
-        self, session_lifetime: timedelta, session: ServerSideSession, store_id: str
-    ) -> None:
+    def _upsert_session(self, session_lifetime: timedelta, session: ServerSideSession, store_id: str) -> None:
         if self._revocation_active(store_id):
             return
 
-        storage_expiration_datetime = datetime.utcnow() + session_lifetime
+        storage_expiration_datetime = datetime.now(tz=UTC) + session_lifetime
         serialized_session_data = self.serializer.encode(session)
         try:
             record = self.sql_session_model.query.filter_by(session_id=store_id).first()
@@ -112,9 +101,7 @@ class PortalSessionInterface(SqlAlchemySessionInterface):
                 record.expiry = storage_expiration_datetime
             else:
                 record = self.sql_session_model(
-                    session_id=store_id,
-                    data=serialized_session_data,
-                    expiry=storage_expiration_datetime,
+                    session_id=store_id, data=serialized_session_data, expiry=storage_expiration_datetime
                 )
                 self.client.session.add(record)
             self.client.session.commit()
