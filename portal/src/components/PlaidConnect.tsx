@@ -117,33 +117,35 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
   ])
 
   const onSuccess = useCallback<PlaidLinkOnSuccess>(
-    async (publicToken) => {
-      exchangeSucceededRef.current = true
-      setBusy(true)
-      try {
-        if (!publicToken) {
+    (publicToken) => {
+      void (async () => {
+        exchangeSucceededRef.current = true
+        setBusy(true)
+        try {
+          if (!publicToken) {
+            pushToast({
+              kind: 'error',
+              message: 'Plaid did not return a public token.',
+            })
+            exchangeSucceededRef.current = false
+            await resetToNotConnected()
+            return
+          }
+          const { integration: next } = await plaidExchange(publicToken)
+          onUpdated(next)
+          clearLocalLink()
+          pushToast({ kind: 'success', message: 'Plaid connected.' })
+        } catch (err) {
+          exchangeSucceededRef.current = false
           pushToast({
             kind: 'error',
-            message: 'Plaid did not return a public token.',
+            message: userFacingApiError(err, 'Could not finish Plaid connection.'),
           })
-          exchangeSucceededRef.current = false
           await resetToNotConnected()
-          return
+        } finally {
+          setBusy(false)
         }
-        const { integration: next } = await plaidExchange(publicToken)
-        onUpdated(next)
-        clearLocalLink()
-        pushToast({ kind: 'success', message: 'Plaid connected.' })
-      } catch (err) {
-        exchangeSucceededRef.current = false
-        pushToast({
-          kind: 'error',
-          message: userFacingApiError(err, 'Could not finish Plaid connection.'),
-        })
-        await resetToNotConnected()
-      } finally {
-        setBusy(false)
-      }
+      })()
     },
     [clearLocalLink, onUpdated, pushToast, resetToNotConnected],
   )
@@ -210,11 +212,20 @@ export function PlaidConnect({ integration, onUpdated }: Props) {
     if (!isConnected || extractBusy) return
     setExtractBusy(true)
     try {
-      const { file } = await plaidExport({ window_days: 90 })
-      const basename = file.replace(/\\/g, '/').split('/').pop() ?? file
+      const { filename, export: payload } = await plaidExport({ window_days: 90 })
+      const txCount =
+        payload &&
+        typeof payload === 'object' &&
+        Array.isArray((payload as { transactions?: unknown }).transactions)
+          ? (payload as { transactions: unknown[] }).transactions.length
+          : undefined
+      const detail =
+        typeof txCount === 'number'
+          ? `${filename} (${txCount} transactions)`
+          : filename
       pushToast({
         kind: 'success',
-        message: `Plaid extract saved: ${basename}`,
+        message: `Plaid extract ready: ${detail}`,
       })
     } catch (err) {
       pushToast({
