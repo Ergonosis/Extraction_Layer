@@ -90,6 +90,14 @@ class Config:
     # Requires FLASK_ENV != production AND ENABLE_DEV_LOGIN=true.
     ENABLE_DEV_LOGIN = _env_bool('ENABLE_DEV_LOGIN', False)
 
+    # Stripe Billing — off by default (mock adapter). Set STRIPE_ENABLED=true + keys to go live/test.
+    STRIPE_ENABLED = _env_bool('STRIPE_ENABLED', False)
+    STRIPE_SECRET_KEY = _load_secret('STRIPE_SECRET_KEY', '')
+    STRIPE_PUBLISHABLE_KEY = os.getenv('STRIPE_PUBLISHABLE_KEY', '')
+    STRIPE_WEBHOOK_SECRET = _load_secret('STRIPE_WEBHOOK_SECRET', '')
+    BILLING_JOB_SECRET = os.getenv('BILLING_JOB_SECRET', '')
+    BILLING_PAST_DUE_GRACE_DAYS = int(os.getenv('BILLING_PAST_DUE_GRACE_DAYS', '5') or '5')
+
     # Plaid (used by later issues)
     PLAID_CLIENT_ID = os.getenv('PLAID_CLIENT_ID', '')
     PLAID_SECRET = _load_secret('PLAID_SECRET', '')

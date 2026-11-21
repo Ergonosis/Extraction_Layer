@@ -126,7 +126,7 @@ def _parse_expiry(result: dict) -> datetime | None:
         return None
     try:
         return _utcnow() + timedelta(seconds=int(expires_in))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         return None
 
 
@@ -486,6 +486,14 @@ def run_export(
     DB ``scopes_granted`` + ``is_active`` gate each pull. Request ``include_*`` flags
     are only a wish list. Never returns or logs the access token.
     """
+    from src.billing.entitlement import EntitlementError
+    from src.billing.hooks import record_export_usage, require_entitled
+
+    try:
+        require_entitled(organization_id)
+    except EntitlementError as exc:
+        raise MsGraphServiceError('Billing access suspended for this organization', status_code=403) from exc
+
     integration = _msgraph_integration(user_id=user_id, organization_id=organization_id)
     cred = integration.ms_graph_credential
     if cred is None or integration.status not in ('connected', 'reauth_required'):
@@ -558,6 +566,7 @@ def run_export(
         calendar_count=len(events),
         profile=bool(profile),
     )
+    record_export_usage(organization_id, source='msgraph')
     return {
         'profile': profile,
         'mail_count': len(messages),

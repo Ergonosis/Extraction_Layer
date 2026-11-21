@@ -10,8 +10,8 @@ from src.api.csp import DEFAULT_CSP, resolve_csp_mode
 
 MUTATING_METHODS = frozenset({'POST', 'PUT', 'DELETE', 'PATCH'})
 
-# Paths that skip CSRF (keep empty of mutations that change state).
-CSRF_EXEMPT_PATHS = frozenset()
+# Paths that skip CSRF (Stripe webhook + scheduler job use their own secrets).
+CSRF_EXEMPT_PATHS = frozenset({'/api/billing/webhook', '/api/billing/jobs/dunning', '/api/billing/jobs/meter-retry'})
 
 
 def ensure_csrf_token() -> str:
@@ -58,4 +58,11 @@ def register_security_middleware(app: Flask) -> None:
         elif mode == 'report-only':
             response.headers['Content-Security-Policy-Report-Only'] = policy
 
+        return response
+
+    @app.after_request
+    def _billing_api_meter(response):
+        from src.billing.hooks import maybe_meter_api_request
+
+        maybe_meter_api_request(request, response)
         return response

@@ -109,6 +109,8 @@ def callback():
 @login_required
 def me():
     """Return the logged-in user and organization (no tokens)."""
+    from src.billing.admins import user_is_platform_admin
+
     user = db.session.get(User, session['user_id'])
     org = user.organization
     return jsonify(
@@ -118,6 +120,7 @@ def me():
             'display_name': user.display_name,
             'created_at': user.created_at.isoformat() if user.created_at else None,
             'organization': {'id': org.id, 'name': org.name, 'ms_tenant_id': org.ms_tenant_id},
+            'is_platform_admin': user_is_platform_admin(user),
         }
     )
 

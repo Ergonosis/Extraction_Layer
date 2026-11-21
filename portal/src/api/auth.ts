@@ -1,10 +1,6 @@
 import { api, clearCsrfToken, ensureCsrfToken } from './client'
 
-export type Organization = {
-  id: number
-  name: string
-  ms_tenant_id: string
-}
+export type Organization = { id: number; name: string; ms_tenant_id: string }
 
 export type AuthUser = {
   id: number
@@ -12,6 +8,8 @@ export type AuthUser = {
   display_name: string
   created_at?: string | null
   organization: Organization
+  /** Ergonosis staff — Admin Billing access */
+  is_platform_admin?: boolean
 }
 
 export async function fetchCurrentUser(): Promise<AuthUser | null> {

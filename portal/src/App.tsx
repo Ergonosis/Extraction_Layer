@@ -1,9 +1,12 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
+
 import { AuthGuard } from './components/AuthGuard'
 import { DevAuthBanner } from './components/DevAuthBanner'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { AppLayout } from './layouts/AppLayout'
+import { AdminBillingPage } from './pages/AdminBillingPage'
+import { BillingPage } from './pages/BillingPage'
 import { ConnectionsPage } from './pages/ConnectionsPage'
 import { FileUploadPage } from './pages/FileUploadPage'
 import { LoginPage } from './pages/LoginPage'
@@ -13,12 +16,12 @@ function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <div className="app-frame">
+        <div className='app-frame'>
           <DevAuthBanner />
-          <div className="app-frame-body">
+          <div className='app-frame-body'>
             <BrowserRouter>
               <Routes>
-                <Route path="/login" element={<LoginPage />} />
+                <Route path='/login' element={<LoginPage />} />
                 <Route
                   element={
                     <AuthGuard>
@@ -26,11 +29,13 @@ function App() {
                     </AuthGuard>
                   }
                 >
-                  <Route path="/connections" element={<ConnectionsPage />} />
-                  <Route path="/file-upload" element={<FileUploadPage />} />
+                  <Route path='/connections' element={<ConnectionsPage />} />
+                  <Route path='/file-upload' element={<FileUploadPage />} />
+                  <Route path='/billing' element={<BillingPage />} />
+                  <Route path='/admin/billing' element={<AdminBillingPage />} />
                 </Route>
-                <Route path="/" element={<Navigate to="/connections" replace />} />
-                <Route path="*" element={<Navigate to="/connections" replace />} />
+                <Route path='/' element={<Navigate to='/connections' replace />} />
+                <Route path='*' element={<Navigate to='/connections' replace />} />
               </Routes>
             </BrowserRouter>
           </div>

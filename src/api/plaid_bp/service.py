@@ -298,6 +298,14 @@ def run_export(
 
     Never returns or logs the access token.
     """
+    from src.billing.entitlement import EntitlementError
+    from src.billing.hooks import record_export_usage, require_entitled
+
+    try:
+        require_entitled(organization_id)
+    except EntitlementError as exc:
+        raise PlaidServiceError('Billing access suspended for this organization', status_code=403) from exc
+
     integration = _plaid_integration(user_id=user_id, organization_id=organization_id)
     cred = integration.plaid_credential
     if cred is None or integration.status not in ('connected', 'reauth_required'):
@@ -352,6 +360,7 @@ def run_export(
         raise PlaidServiceError('Plaid export failed', status_code=502) from exc
 
     audit('plaid.export', user_id=user_id, organization_id=organization_id, item_id=cred.item_id, filename=filename)
+    record_export_usage(organization_id, source='plaid')
     return {
         'filename': filename,
         'item_id': cred.item_id,

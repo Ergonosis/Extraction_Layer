@@ -108,6 +108,7 @@ def create_app(config_class=Config):
     # Register models before Alembic reads SQLAlchemy metadata.
     from src.api import models  # noqa: F401
     from src.api.session_store import init_sessions
+    from src.billing import models as billing_models  # noqa: F401
 
     init_sessions(app)
     init_limiter(app)
@@ -115,6 +116,8 @@ def create_app(config_class=Config):
     _register_error_handlers(app)
 
     from src.api.auth import bp as auth_bp
+    from src.api.billing_bp import admin_bp as admin_billing_bp
+    from src.api.billing_bp import bp as billing_bp
     from src.api.integrations import bp as integrations_bp
     from src.api.msgraph_bp import bp as msgraph_bp
     from src.api.plaid_bp import bp as plaid_bp
@@ -123,6 +126,8 @@ def create_app(config_class=Config):
     app.register_blueprint(integrations_bp, url_prefix='/api/integrations')
     app.register_blueprint(plaid_bp, url_prefix='/api/plaid')
     app.register_blueprint(msgraph_bp, url_prefix='/api/msgraph')
+    app.register_blueprint(billing_bp, url_prefix='/api/billing')
+    app.register_blueprint(admin_billing_bp, url_prefix='/api/admin/billing')
 
     @app.get('/api/health')
     @limiter.exempt

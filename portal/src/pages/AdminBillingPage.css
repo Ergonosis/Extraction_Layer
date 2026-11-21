@@ -1,0 +1,213 @@
+.admin-billing-page {
+  max-width: 1100px;
+}
+
+.admin-billing-header h1 {
+  margin: 0 0 8px;
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.admin-billing-header p {
+  margin: 0 0 24px;
+  color: #64748b;
+}
+
+.admin-billing-error {
+  color: #b91c1c;
+  margin: 0 0 16px;
+}
+
+.admin-billing-muted {
+  margin: 0 0 12px;
+  color: #64748b;
+}
+
+.admin-billing-layout {
+  display: grid;
+  grid-template-columns: minmax(220px, 280px) 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+@media (max-width: 800px) {
+  .admin-billing-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.admin-billing-list h2,
+.admin-billing-detail h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+  color: #0f172a;
+}
+
+.admin-billing-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-org-btn {
+  width: 100%;
+  text-align: left;
+  appearance: none;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.admin-org-btn-active {
+  border-color: #0f172a;
+  background: #f8fafc;
+}
+
+.admin-org-name {
+  display: block;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.admin-org-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+.admin-billing-fieldset {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin: 0 0 16px;
+}
+
+.admin-billing-fieldset legend {
+  padding: 0 4px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.admin-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  color: #0f172a;
+}
+
+.admin-billing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.admin-billing-grid label,
+.admin-billing-block {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 12px;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.admin-billing-grid input,
+.admin-billing-block input,
+.admin-billing-block textarea {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font: inherit;
+  color: #0f172a;
+}
+
+.admin-disputes {
+  margin: 16px 0 8px;
+}
+
+.admin-disputes h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: #0f172a;
+}
+
+.admin-dispute-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.admin-dispute-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+  font-size: 0.9rem;
+  color: #334155;
+}
+
+.admin-dispute-row a {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.admin-billing-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.admin-refund-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8125rem;
+  color: #64748b;
+  font-weight: 600;
+}
+
+.admin-refund-field input {
+  min-width: 180px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 400;
+  color: #0f172a;
+}
+
+.admin-btn {
+  appearance: none;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 14px;
+  background: #0f172a;
+  color: #fff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.admin-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.admin-btn-secondary {
+  background: #fff;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}

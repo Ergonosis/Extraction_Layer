@@ -20,6 +20,7 @@ dependencies = [
     "python-dotenv==1.2.4",
     "redis==8.1.0",
     "requests==2.34.2",
+    "stripe>=12,<14",
 ]
 
 [dependency-groups]
@@ -34,7 +35,7 @@ package = false
 environments = [
     "sys_platform == 'linux' and platform_machine == 'x86_64'",
     "sys_platform == 'darwin' and platform_machine == 'arm64'",
-    # "sys_platform == 'win32' and platform_machine == 'x86_64'",
+    "sys_platform == 'win32' and platform_machine == 'AMD64'",
 ]
 
 
