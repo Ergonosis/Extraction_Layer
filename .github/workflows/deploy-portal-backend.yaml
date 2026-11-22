@@ -167,7 +167,7 @@ jobs:
       - name: Patch cloudrun.yaml with new image digest
         uses: jacobtomlinson/gha-find-replace@v3
         with:
-          find: ${{ env.DOCKER_IMAGE_NAME }}:latest
+          find: __DOCKER_IMAGE_NAME_PLACEHOLDER__:latest
           replace: '${{ env.DOCKER_IMAGE_NAME }}@${{ steps.docker_build.outputs.digest }}'
           include: ${{ env.CLOUD_RUN_FILE_PATH }}
           regex: false

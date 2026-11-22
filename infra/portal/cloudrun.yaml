@@ -23,7 +23,7 @@ spec:
       containers:
         # GitHub Actions replaces this mutable placeholder with an immutable digest.
         - name: api
-          image: us-central1-docker.pkg.dev/auspicious-silo-492102-j6/extraction-portal/extraction-portal:latest
+          image: __DOCKER_IMAGE_NAME_PLACEHOLDER__:latest
           ports:
             - name: http1
               containerPort: 8080
