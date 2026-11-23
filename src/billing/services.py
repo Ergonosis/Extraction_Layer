@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from src.api.extensions import db
@@ -9,6 +10,8 @@ from src.api.models import Organization, User
 from src.billing.models import BillingAdminEvent, OrganizationBilling, _utcnow
 from src.billing.settings import stripe_enabled, stripe_publishable_key
 from src.billing.stripe_adapter import get_stripe_adapter
+
+logger = logging.getLogger(__name__)
 
 
 def get_org_billing(organization_id: int) -> OrganizationBilling | None:
@@ -62,14 +65,12 @@ def _is_mock() -> bool:
 
 def _upcoming_invoice_payload(row: OrganizationBilling | None, *, mock: bool) -> dict[str, Any]:
     if mock or row is None or not row.stripe_customer_id or str(row.stripe_customer_id).startswith('mock_'):
-        return {
-            'currency': 'usd',
-            'subtotal': None,
-            'tax': None,
-            'total': None,
-            'lines': [],
-            'note': 'Billing is in mock mode. No live charges or tax.',
-        }
+        note = (
+            'Billing is in mock mode. No live charges or tax.'
+            if mock
+            else 'No Stripe customer yet. Complete Checkout to enable invoice previews.'
+        )
+        return {'currency': 'usd', 'subtotal': None, 'tax': None, 'total': None, 'lines': [], 'note': note}
     adapter = get_stripe_adapter()
     preview = adapter.preview_upcoming_invoice(
         customer_id=row.stripe_customer_id, subscription_id=row.stripe_subscription_id
@@ -138,9 +139,14 @@ def usage_totals(organization_id: int) -> dict[str, int]:
 def list_invoices(organization_id: int) -> dict[str, Any]:
     row = get_org_billing(organization_id)
     adapter = get_stripe_adapter()
-    if row is None or not row.stripe_customer_id:
+    customer_id = row.stripe_customer_id if row else None
+    if not customer_id or str(customer_id).startswith('mock_'):
         return {'invoices': [], 'mock': adapter.mock}
-    invoices = adapter.list_invoices(customer_id=row.stripe_customer_id)
+    try:
+        invoices = adapter.list_invoices(customer_id=str(customer_id))
+    except Exception:
+        logger.exception('list_invoices failed org=%s customer=%s', organization_id, customer_id)
+        return {'invoices': [], 'mock': adapter.mock, 'error': 'Could not load invoices from Stripe.'}
     return {'invoices': invoices, 'mock': adapter.mock}
 
 
@@ -186,10 +192,11 @@ def create_setup_session(organization_id: int, *, actor_user_id: int | None = No
 
 def create_portal_session(organization_id: int) -> dict[str, Any]:
     row = get_org_billing(organization_id)
-    if row is None or not row.stripe_customer_id:
+    customer_id = row.stripe_customer_id if row else None
+    if not customer_id or str(customer_id).startswith('mock_'):
         raise ValueError('billing not set up for organization')
     adapter = get_stripe_adapter()
-    result = adapter.create_portal_session(customer_id=row.stripe_customer_id)
+    result = adapter.create_portal_session(customer_id=str(customer_id))
     return {'url': result.url, 'mock': result.mock}
 
 

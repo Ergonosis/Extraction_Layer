@@ -23,8 +23,8 @@ function isSafeApiMessage(value: unknown): value is string {
 }
 
 /**
- * Map Axios / network failures to user-facing copy.
- * Prefer fixed status messages; allow short API `error` strings for 400 only.
+ * Map Axios / network failures to user-facing copy. Prefer fixed status messages; allow short API `error` strings for
+ * 400 only.
  */
 export function userFacingApiError(err: unknown, fallback: string): string {
   if (!isAxiosError(err)) return fallback
@@ -34,8 +34,13 @@ export function userFacingApiError(err: unknown, fallback: string): string {
   }
 
   const status = err.response.status
-  const apiError = (err.response.data as { error?: unknown } | undefined)?.error
+  const body = err.response.data as { error?: unknown; detail?: unknown } | undefined
+  const apiDetail = body?.detail
+  const apiError = body?.error
 
+  if (status === 400 && isSafeApiMessage(apiDetail)) {
+    return apiDetail
+  }
   if (status === 400 && isSafeApiMessage(apiError)) {
     return apiError
   }

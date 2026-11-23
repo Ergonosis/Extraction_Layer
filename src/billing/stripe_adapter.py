@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -10,6 +11,22 @@ from src.billing.meters import Meter
 from src.billing.settings import portal_base_url, stripe_enabled, stripe_meter_event_name, stripe_secret_key
 
 logger = logging.getLogger(__name__)
+
+# Stripe rejects reserved / non-routable domains (e.g. dev@localhost from ENABLE_DEV_LOGIN).
+_STRIPE_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
+_BLOCKED_EMAIL_HOSTS = frozenset({'localhost', 'localhost.localdomain', 'example.com', 'example.org', 'example.net'})
+
+
+def _stripe_safe_email(email: str | None) -> str | None:
+    if not email or not isinstance(email, str):
+        return None
+    cleaned = email.strip()
+    if not _STRIPE_EMAIL_RE.match(cleaned):
+        return None
+    host = cleaned.rsplit('@', 1)[-1].lower()
+    if host in _BLOCKED_EMAIL_HOSTS or host.endswith('.localhost'):
+        return None
+    return cleaned
 
 
 @dataclass(frozen=True)
@@ -243,9 +260,15 @@ class LiveStripeAdapter:
         stripe = self._stripe()
         if existing_customer_id and not existing_customer_id.startswith('mock_'):
             return existing_customer_id
-        customer = stripe.Customer.create(
-            email=email or None, name=name or None, metadata={'organization_id': str(organization_id)}
-        )
+        safe_email = _stripe_safe_email(email)
+        if email and not safe_email:
+            logger.info('Omitting invalid Stripe customer email for org=%s', organization_id)
+        params: dict[str, Any] = {'metadata': {'organization_id': str(organization_id)}}
+        if safe_email:
+            params['email'] = safe_email
+        if name:
+            params['name'] = name
+        customer = stripe.Customer.create(**params)
         return str(customer['id'])
 
     def report_meter_event(
@@ -281,15 +304,14 @@ class LiveStripeAdapter:
             'cancel_url': f'{base}/billing?checkout=cancel',
             'client_reference_id': str(organization_id),
             'metadata': {'organization_id': str(organization_id)},
-            'automatic_tax': {'enabled': True},
-            'customer_update': {'address': 'auto', 'name': 'auto'},
-            'tax_id_collection': {'enabled': True},
+            'payment_method_types': ['card'],
         }
-        if mode == 'setup':
-            params['payment_method_types'] = ['card']
-        else:
+        # automatic_tax / tax_id_collection are not valid for Checkout setup mode (card-only).
+        if mode != 'setup':
+            params['automatic_tax'] = {'enabled': True}
+            params['customer_update'] = {'address': 'auto', 'name': 'auto'}
+            params['tax_id_collection'] = {'enabled': True}
             params['line_items'] = line_items
-            params['payment_method_types'] = ['card']
         session = stripe.checkout.Session.create(**params)
         url = session.get('url') if isinstance(session, dict) else session.url
         sid = session.get('id') if isinstance(session, dict) else session.id
