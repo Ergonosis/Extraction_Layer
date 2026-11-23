@@ -116,6 +116,23 @@ class StripeAdapter(Protocol):
         """Return dispute summaries for a Stripe customer."""
         ...
 
+    def get_customer_default_or_latest_card_pm(self, customer_id: str) -> str | None:
+        """Return default invoice PM id, else the most recent card on the customer."""
+        ...
+
+    def ensure_plan_price(
+        self,
+        *,
+        organization_id: int,
+        org_name: str,
+        kind: str,
+        unit_amount_cents: int,
+        existing_price_id: str | None,
+        previous_unit_amount_cents: int | None,
+    ) -> str:
+        """Create (or reuse) a Stripe Price for an org plan component; return price_… id."""
+        ...
+
 
 @dataclass
 class MockStripeAdapter:
@@ -237,6 +254,38 @@ class MockStripeAdapter:
     def list_disputes(self, *, customer_id: str, limit: int = 20) -> list[dict[str, Any]]:
         _ = customer_id, limit
         return []
+
+    def get_customer_default_or_latest_card_pm(self, customer_id: str) -> str | None:
+        _ = customer_id
+        return None
+
+    def ensure_plan_price(
+        self,
+        *,
+        organization_id: int,
+        org_name: str,
+        kind: str,
+        unit_amount_cents: int,
+        existing_price_id: str | None,
+        previous_unit_amount_cents: int | None,
+    ) -> str:
+        _ = org_name
+        if (
+            existing_price_id
+            and previous_unit_amount_cents is not None
+            and previous_unit_amount_cents == unit_amount_cents
+            and not str(existing_price_id).startswith('mock_')
+        ):
+            return str(existing_price_id)
+        if (
+            existing_price_id
+            and previous_unit_amount_cents is not None
+            and previous_unit_amount_cents == unit_amount_cents
+            and str(existing_price_id).startswith('mock_')
+        ):
+            return str(existing_price_id)
+        self._seq += 1
+        return f'mock_price_{kind}_{organization_id}_{self._seq}_{unit_amount_cents}'
 
 
 @dataclass
@@ -464,6 +513,92 @@ class LiveStripeAdapter:
         if subscription_id and not str(subscription_id).startswith('mock_'):
             stripe.Subscription.modify(subscription_id, default_payment_method=payment_method_id)
 
+    def _find_or_create_meter(self, *, event_name: str, display_name: str) -> str | None:
+        """Return a Billing Meter id for metered prices, or None if meters API unavailable."""
+        stripe = self._stripe()
+        billing = getattr(stripe, 'billing', None)
+        meter_cls = getattr(billing, 'Meter', None) if billing is not None else None
+        if meter_cls is None:
+            return None
+        try:
+            listed = meter_cls.list(limit=100)
+            data = listed.get('data') if isinstance(listed, dict) else listed.data
+            for meter in data or []:
+                name = meter.get('event_name') if isinstance(meter, dict) else getattr(meter, 'event_name', None)
+                if name == event_name:
+                    mid = meter.get('id') if isinstance(meter, dict) else getattr(meter, 'id', None)
+                    if mid:
+                        return str(mid)
+            created = meter_cls.create(
+                display_name=display_name,
+                event_name=event_name,
+                default_aggregation={'formula': 'sum'},
+                customer_mapping={'type': 'by_id', 'event_payload_key': 'stripe_customer_id'},
+                value_settings={'event_payload_key': 'value'},
+            )
+            mid = created.get('id') if isinstance(created, dict) else getattr(created, 'id', None)
+            return str(mid) if mid else None
+        except Exception:
+            logger.exception('Stripe meter lookup/create failed event_name=%s', event_name)
+            return None
+
+    def ensure_plan_price(
+        self,
+        *,
+        organization_id: int,
+        org_name: str,
+        kind: str,
+        unit_amount_cents: int,
+        existing_price_id: str | None,
+        previous_unit_amount_cents: int | None,
+    ) -> str:
+        if unit_amount_cents < 0:
+            raise ValueError(f'{kind} amount must be >= 0')
+        if (
+            existing_price_id
+            and not str(existing_price_id).startswith('mock_')
+            and previous_unit_amount_cents is not None
+            and previous_unit_amount_cents == unit_amount_cents
+        ):
+            return str(existing_price_id)
+
+        stripe = self._stripe()
+        labels = {
+            'flat': 'Platform fee (monthly)',
+            'exports': 'Exports (per unit)',
+            'api_calls': 'API calls (per unit)',
+        }
+        label = labels.get(kind, kind)
+        product = stripe.Product.create(
+            name=f'{org_name} — {label}'[:250], metadata={'organization_id': str(organization_id), 'plan_kind': kind}
+        )
+        product_id = product.get('id') if isinstance(product, dict) else product.id
+
+        recurring: dict[str, Any] = {'interval': 'month'}
+        if kind in {'exports', 'api_calls'}:
+            event_name = stripe_meter_event_name(kind)
+            meter_id = self._find_or_create_meter(event_name=event_name, display_name=label)
+            if meter_id:
+                recurring['meter'] = meter_id
+                recurring['usage_type'] = 'metered'
+            else:
+                recurring['usage_type'] = 'metered'
+
+        price = stripe.Price.create(
+            product=product_id,
+            currency='usd',
+            unit_amount=int(unit_amount_cents),
+            recurring=recurring,
+            metadata={'organization_id': str(organization_id), 'plan_kind': kind},
+        )
+        price_id = price.get('id') if isinstance(price, dict) else price.id
+        if existing_price_id and not str(existing_price_id).startswith('mock_'):
+            try:
+                stripe.Price.modify(str(existing_price_id), active=False)
+            except Exception:
+                logger.info('Could not archive prior Stripe price %s', existing_price_id)
+        return str(price_id)
+
     def preview_upcoming_invoice(
         self, *, customer_id: str, subscription_id: str | None = None
     ) -> dict[str, Any] | None:
@@ -515,6 +650,39 @@ class LiveStripeAdapter:
             'lines': lines_out,
             'note': None,
         }
+
+    def get_customer_default_or_latest_card_pm(self, customer_id: str) -> str | None:
+        stripe = self._stripe()
+
+        def g(obj: Any, key: str, default=None):
+            if isinstance(obj, dict):
+                return obj.get(key, default)
+            return getattr(obj, key, default)
+
+        try:
+            customer = stripe.Customer.retrieve(customer_id)
+        except Exception:
+            logger.exception('Customer.retrieve failed customer=%s', customer_id)
+            return None
+
+        invoice_settings = g(customer, 'invoice_settings') or {}
+        default_pm = g(invoice_settings, 'default_payment_method')
+        if isinstance(default_pm, str) and default_pm.startswith('pm_'):
+            return default_pm
+        if isinstance(default_pm, dict) and default_pm.get('id'):
+            return str(default_pm['id'])
+
+        try:
+            listed = stripe.PaymentMethod.list(customer=customer_id, type='card', limit=1)
+        except Exception:
+            logger.exception('PaymentMethod.list failed customer=%s', customer_id)
+            return None
+        data = g(listed, 'data') or []
+        if not data:
+            return None
+        first = data[0]
+        pm_id = g(first, 'id')
+        return str(pm_id) if pm_id else None
 
     def list_disputes(self, *, customer_id: str, limit: int = 20) -> list[dict[str, Any]]:
         stripe = self._stripe()

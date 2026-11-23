@@ -29,7 +29,7 @@ def _org_id_from_metadata(meta: Any) -> int | None:
         raw = meta.to_dict().get('organization_id')
     try:
         return int(raw) if raw is not None else None
-    except TypeError, ValueError:
+    except (TypeError, ValueError):  # fmt: skip
         return None
 
 
@@ -114,15 +114,17 @@ def _on_checkout_completed(obj: Any) -> bool:
         row.stripe_customer_id = str(customer_id)
     if subscription_id:
         row.stripe_subscription_id = str(subscription_id)
-        row.status = 'active'
-        row.entitlement = 'enabled'
-    apply_default_payment_method(
+    applied = apply_default_payment_method(
         row,
         payment_method=_obj_get(obj, 'payment_method'),
         setup_intent=setup_intent,
         payment_intent=payment_intent,
         subscription=subscription_id,
     )
+    # Setup-mode Checkout (card only) or subscription Checkout both leave setup_required behind.
+    if row.status == 'setup_required' and (subscription_id or applied or row.pm_last4 or row.default_payment_method_id):
+        row.status = 'active'
+        row.entitlement = 'enabled'
     db.session.commit()
     return True
 
@@ -134,7 +136,10 @@ def _on_setup_intent_succeeded(obj: Any) -> bool:
     row = _billing_by_customer(str(customer_id) if customer_id else None)
     if row is None:
         return False
-    apply_default_payment_method(row, payment_method=_obj_get(obj, 'payment_method'), setup_intent=obj)
+    applied = apply_default_payment_method(row, payment_method=_obj_get(obj, 'payment_method'), setup_intent=obj)
+    if applied and row.status == 'setup_required':
+        row.status = 'active'
+        row.entitlement = 'enabled'
     db.session.commit()
     return True
 

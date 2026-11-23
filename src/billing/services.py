@@ -35,7 +35,56 @@ def get_or_create_org_billing(organization_id: int) -> OrganizationBilling:
     return row
 
 
+def _plan_amounts_cents(row: OrganizationBilling) -> dict[str, int | None]:
+    raw = row.terms_json if isinstance(row.terms_json, dict) else {}
+    amounts = raw.get('amounts_cents') if isinstance(raw.get('amounts_cents'), dict) else {}
+    out: dict[str, int | None] = {'flat': None, 'exports': None, 'api_calls': None}
+    for key in out:
+        val = amounts.get(key)
+        if val is None or val == '':
+            continue
+        try:
+            out[key] = int(val)
+        except TypeError, ValueError:
+            out[key] = None
+    return out
+
+
+def _usd_to_cents(raw: Any, *, field: str) -> int | None:
+    """Parse a dollar amount from admin UI into integer cents."""
+    if raw is None or raw == '':
+        return None
+    try:
+        # Avoid float drift: round half-up via Decimal-ish string path.
+        text = str(raw).strip().replace('$', '').replace(',', '')
+        if not text:
+            return None
+        negative = text.startswith('-')
+        if negative:
+            text = text[1:]
+        if '.' in text:
+            dollars, frac = text.split('.', 1)
+            frac = (frac + '00')[:2]
+            cents = int(dollars or '0') * 100 + int(frac)
+        else:
+            cents = int(text) * 100
+        if negative:
+            cents = -cents
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f'{field} must be a dollar amount like 100 or 2.50') from exc
+    if cents < 0:
+        raise ValueError(f'{field} must be >= 0')
+    return cents
+
+
+def _cents_to_usd_str(cents: int | None) -> str:
+    if cents is None:
+        return ''
+    return f'{cents / 100:.2f}'
+
+
 def _billing_public_dict(row: OrganizationBilling) -> dict[str, Any]:
+    amounts = _plan_amounts_cents(row)
     return {
         'organization_id': row.organization_id,
         'status': row.status,
@@ -56,6 +105,9 @@ def _billing_public_dict(row: OrganizationBilling) -> dict[str, Any]:
         'stripe_flat_price_id': row.stripe_flat_price_id,
         'stripe_exports_price_id': row.stripe_exports_price_id,
         'stripe_api_calls_price_id': row.stripe_api_calls_price_id,
+        'flat_amount_usd': _cents_to_usd_str(amounts['flat']),
+        'exports_unit_amount_usd': _cents_to_usd_str(amounts['exports']),
+        'api_calls_unit_amount_usd': _cents_to_usd_str(amounts['api_calls']),
     }
 
 
@@ -108,6 +160,22 @@ def customer_summary(organization_id: int) -> dict[str, Any]:
             'publishable_key': stripe_publishable_key() if stripe_enabled() else None,
             'mock': mock,
         }
+    # Local card/status are webhook-driven; heal when Checkout completed but listen missed.
+    needs_pm_sync = not row.pm_last4 or not row.default_payment_method_id
+    needs_status_heal = row.status == 'setup_required' and bool(row.pm_last4 or row.default_payment_method_id)
+    if needs_pm_sync or needs_status_heal:
+        from src.billing.payment_methods import sync_payment_method_from_stripe
+
+        try:
+            if sync_payment_method_from_stripe(row) or needs_status_heal:
+                if row.status == 'setup_required' and (row.pm_last4 or row.default_payment_method_id):
+                    row.status = 'active'
+                    row.entitlement = 'enabled'
+                db.session.commit()
+        except Exception:
+            logger.exception('customer_summary PM sync failed org=%s', organization_id)
+            db.session.rollback()
+            row = get_org_billing(organization_id) or row
     usage = usage_totals(organization_id)
     return {
         **_billing_public_dict(row),
@@ -253,12 +321,49 @@ def admin_upsert_org_plan(
         row.included_api_calls = int(payload['included_api_calls'])
     if 'terms_markdown' in payload:
         row.terms_markdown = payload['terms_markdown']
-    if 'stripe_flat_price_id' in payload:
-        row.stripe_flat_price_id = payload['stripe_flat_price_id'] or None
-    if 'stripe_exports_price_id' in payload:
-        row.stripe_exports_price_id = payload['stripe_exports_price_id'] or None
-    if 'stripe_api_calls_price_id' in payload:
-        row.stripe_api_calls_price_id = payload['stripe_api_calls_price_id'] or None
+
+    prev_amounts = _plan_amounts_cents(row)
+    next_amounts = dict(prev_amounts)
+    amount_keys = (
+        ('flat_amount_usd', 'flat', 'Flat monthly fee'),
+        ('exports_unit_amount_usd', 'exports', 'Exports unit price'),
+        ('api_calls_unit_amount_usd', 'api_calls', 'API calls unit price'),
+    )
+    for payload_key, amount_key, label in amount_keys:
+        if payload_key in payload:
+            next_amounts[amount_key] = _usd_to_cents(payload[payload_key], field=label)
+
+    adapter = get_stripe_adapter()
+    org_name = org.name or f'Organization {organization_id}'
+
+    def _sync_price(*, kind: str, enabled: bool, existing_price_id: str | None) -> str | None:
+        cents = next_amounts.get(kind)
+        if not enabled:
+            return existing_price_id
+        if cents is None:
+            raise ValueError(f'Set a USD amount for {kind.replace("_", " ")} before enabling it')
+        return adapter.ensure_plan_price(
+            organization_id=organization_id,
+            org_name=org_name,
+            kind=kind,
+            unit_amount_cents=int(cents),
+            existing_price_id=existing_price_id,
+            previous_unit_amount_cents=prev_amounts.get(kind),
+        )
+
+    row.stripe_flat_price_id = _sync_price(
+        kind='flat', enabled=row.flat_enabled, existing_price_id=row.stripe_flat_price_id
+    )
+    row.stripe_exports_price_id = _sync_price(
+        kind='exports', enabled=row.exports_enabled, existing_price_id=row.stripe_exports_price_id
+    )
+    row.stripe_api_calls_price_id = _sync_price(
+        kind='api_calls', enabled=row.api_calls_enabled, existing_price_id=row.stripe_api_calls_price_id
+    )
+
+    terms = dict(row.terms_json) if isinstance(row.terms_json, dict) else {}
+    terms['amounts_cents'] = {k: v for k, v in next_amounts.items() if v is not None}
+    row.terms_json = terms
 
     if (
         row.status == 'setup_required'

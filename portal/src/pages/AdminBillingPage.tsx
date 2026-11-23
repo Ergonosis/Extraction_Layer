@@ -24,9 +24,9 @@ type FormState = {
   included_exports: number
   included_api_calls: number
   terms_markdown: string
-  stripe_flat_price_id: string
-  stripe_exports_price_id: string
-  stripe_api_calls_price_id: string
+  flat_amount_usd: string
+  exports_unit_amount_usd: string
+  api_calls_unit_amount_usd: string
 }
 
 const emptyForm = (): FormState => ({
@@ -36,9 +36,9 @@ const emptyForm = (): FormState => ({
   included_exports: 0,
   included_api_calls: 0,
   terms_markdown: '',
-  stripe_flat_price_id: '',
-  stripe_exports_price_id: '',
-  stripe_api_calls_price_id: '',
+  flat_amount_usd: '',
+  exports_unit_amount_usd: '',
+  api_calls_unit_amount_usd: '',
 })
 
 function formFromDetail(detail: AdminOrgDetail): FormState {
@@ -51,9 +51,9 @@ function formFromDetail(detail: AdminOrgDetail): FormState {
     included_exports: b.included_exports,
     included_api_calls: b.included_api_calls,
     terms_markdown: b.terms_markdown ?? '',
-    stripe_flat_price_id: b.stripe_flat_price_id ?? '',
-    stripe_exports_price_id: b.stripe_exports_price_id ?? '',
-    stripe_api_calls_price_id: b.stripe_api_calls_price_id ?? '',
+    flat_amount_usd: b.flat_amount_usd ?? '',
+    exports_unit_amount_usd: b.exports_unit_amount_usd ?? '',
+    api_calls_unit_amount_usd: b.api_calls_unit_amount_usd ?? '',
   }
 }
 
@@ -156,14 +156,21 @@ export function AdminBillingPage() {
         included_exports: form.included_exports,
         included_api_calls: form.included_api_calls,
         terms_markdown: form.terms_markdown || null,
-        stripe_flat_price_id: form.stripe_flat_price_id || null,
-        stripe_exports_price_id: form.stripe_exports_price_id || null,
-        stripe_api_calls_price_id: form.stripe_api_calls_price_id || null,
+        flat_amount_usd: form.flat_amount_usd || null,
+        exports_unit_amount_usd: form.exports_unit_amount_usd || null,
+        api_calls_unit_amount_usd: form.api_calls_unit_amount_usd || null,
       })
       setDetail(next)
       setForm(formFromDetail(next))
       await loadOrgs()
-      pushToast({ kind: 'success', message: 'Billing plan saved.' })
+      const created =
+        next.billing?.stripe_flat_price_id
+        || next.billing?.stripe_exports_price_id
+        || next.billing?.stripe_api_calls_price_id
+      pushToast({
+        kind: 'success',
+        message: created ? 'Billing plan saved. Stripe prices created/updated.' : 'Billing plan saved.',
+      })
     } catch (err) {
       pushToast({ kind: 'error', message: userFacingApiError(err, 'Could not save billing plan.') })
     } finally {
@@ -215,7 +222,10 @@ export function AdminBillingPage() {
     <div className='admin-billing-page'>
       <header className='admin-billing-header'>
         <h1>Admin Billing</h1>
-        <p>Configure customer plans. Cards and tax stay in Stripe (mocked until connected).</p>
+        <p>
+          Enter USD prices here, enable the meters that apply, then Save plan. We create matching Products/Prices in
+          Stripe and keep the linked price ids for Checkout.
+        </p>
       </header>
 
       {error ?
@@ -316,33 +326,58 @@ export function AdminBillingPage() {
                 </label>
               </div>
 
-              <label className='admin-billing-block'>
-                Stripe flat price id (optional)
-                <input
-                  type='text'
-                  value={form.stripe_flat_price_id}
-                  onChange={e => setForm(f => ({ ...f, stripe_flat_price_id: e.target.value }))}
-                  placeholder='price_…'
-                />
-              </label>
-              <label className='admin-billing-block'>
-                Stripe exports price id (optional)
-                <input
-                  type='text'
-                  value={form.stripe_exports_price_id}
-                  onChange={e => setForm(f => ({ ...f, stripe_exports_price_id: e.target.value }))}
-                  placeholder='price_…'
-                />
-              </label>
-              <label className='admin-billing-block'>
-                Stripe API calls price id (optional)
-                <input
-                  type='text'
-                  value={form.stripe_api_calls_price_id}
-                  onChange={e => setForm(f => ({ ...f, stripe_api_calls_price_id: e.target.value }))}
-                  placeholder='price_…'
-                />
-              </label>
+              <fieldset className='admin-billing-fieldset' disabled={busy}>
+                <legend>USD prices (creates Stripe Prices on save)</legend>
+                <p className='admin-billing-muted'>
+                  Type dollar amounts (e.g. 100 or 2.50). Saving creates Stripe catalog prices and stores the resulting{' '}
+                  <code>price_…</code> ids automatically.
+                </p>
+                <label className='admin-billing-block'>
+                  Flat / platform fee (USD per month)
+                  <input
+                    type='text'
+                    inputMode='decimal'
+                    value={form.flat_amount_usd}
+                    onChange={e => setForm(f => ({ ...f, flat_amount_usd: e.target.value }))}
+                    placeholder='100.00'
+                  />
+                  {detail.billing?.stripe_flat_price_id ?
+                    <span className='admin-billing-muted'>
+                      Linked Stripe price: {detail.billing.stripe_flat_price_id}
+                    </span>
+                  : null}
+                </label>
+                <label className='admin-billing-block'>
+                  Exports (USD per export)
+                  <input
+                    type='text'
+                    inputMode='decimal'
+                    value={form.exports_unit_amount_usd}
+                    onChange={e => setForm(f => ({ ...f, exports_unit_amount_usd: e.target.value }))}
+                    placeholder='2.00'
+                  />
+                  {detail.billing?.stripe_exports_price_id ?
+                    <span className='admin-billing-muted'>
+                      Linked Stripe price: {detail.billing.stripe_exports_price_id}
+                    </span>
+                  : null}
+                </label>
+                <label className='admin-billing-block'>
+                  API calls (USD per call)
+                  <input
+                    type='text'
+                    inputMode='decimal'
+                    value={form.api_calls_unit_amount_usd}
+                    onChange={e => setForm(f => ({ ...f, api_calls_unit_amount_usd: e.target.value }))}
+                    placeholder='0.01'
+                  />
+                  {detail.billing?.stripe_api_calls_price_id ?
+                    <span className='admin-billing-muted'>
+                      Linked Stripe price: {detail.billing.stripe_api_calls_price_id}
+                    </span>
+                  : null}
+                </label>
+              </fieldset>
 
               <label className='admin-billing-block'>
                 Terms (shown on customer Billing page)

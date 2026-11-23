@@ -15,7 +15,7 @@ const STATUS_MESSAGES: Record<number, string> = {
 function isSafeApiMessage(value: unknown): value is string {
   if (typeof value !== 'string') return false
   const trimmed = value.trim()
-  if (!trimmed || trimmed.length > 160) return false
+  if (!trimmed || trimmed.length > 240) return false
   if (/traceback|exception|stack|sqlalchemy|psycopg|fernet|secret|token=/i.test(trimmed)) {
     return false
   }

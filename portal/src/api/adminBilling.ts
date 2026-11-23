@@ -25,6 +25,9 @@ export type AdminOrgDetail = {
     stripe_flat_price_id?: string | null
     stripe_exports_price_id?: string | null
     stripe_api_calls_price_id?: string | null
+    flat_amount_usd?: string | null
+    exports_unit_amount_usd?: string | null
+    api_calls_unit_amount_usd?: string | null
   } | null
   usage: { exports: number; api_calls: number }
 }
@@ -36,9 +39,9 @@ export type AdminPlanPayload = {
   included_exports?: number
   included_api_calls?: number
   terms_markdown?: string | null
-  stripe_flat_price_id?: string | null
-  stripe_exports_price_id?: string | null
-  stripe_api_calls_price_id?: string | null
+  flat_amount_usd?: string | null
+  exports_unit_amount_usd?: string | null
+  api_calls_unit_amount_usd?: string | null
 }
 
 export async function fetchAdminBillingOrgs(): Promise<AdminOrgListItem[]> {

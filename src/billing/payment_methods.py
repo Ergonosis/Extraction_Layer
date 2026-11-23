@@ -74,3 +74,30 @@ def apply_default_payment_method(
         'billing.pm default set org=%s customer=%s pm=%s sub=%s', row.organization_id, customer_id, pm_id, sub_id
     )
     return True
+
+
+def sync_payment_method_from_stripe(row: OrganizationBilling) -> bool:
+    """Backfill local card-on-file when Stripe has a PM but webhooks never updated us."""
+    changed = False
+    if not (row.pm_last4 and row.default_payment_method_id):
+        customer_id = row.stripe_customer_id
+        if not customer_id or str(customer_id).startswith('mock_'):
+            return False
+        adapter = get_stripe_adapter()
+        if adapter.mock:
+            return False
+        try:
+            pm_id = adapter.get_customer_default_or_latest_card_pm(str(customer_id))
+        except Exception:
+            logger.exception('billing.pm sync lookup failed org=%s', row.organization_id)
+            return False
+        if not pm_id:
+            return False
+        changed = apply_default_payment_method(row, payment_method=pm_id)
+
+    # Card-only Checkout (setup mode) never creates a subscription; still leave setup_required.
+    if (changed or row.pm_last4 or row.default_payment_method_id) and row.status == 'setup_required':
+        row.status = 'active'
+        row.entitlement = 'enabled'
+        changed = True
+    return changed

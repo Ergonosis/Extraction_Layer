@@ -122,7 +122,7 @@ def meter_retry_job():
     if 'limit' in body:
         try:
             limit = max(1, min(200, int(body['limit'])))
-        except TypeError, ValueError:
+        except (TypeError, ValueError):  # fmt: skip
             return jsonify({'error': 'Bad request', 'detail': 'limit must be an integer'}), 400
     result = run_meter_retry_pass(limit=limit)
     return jsonify({'ok': True, **result, 'stripe_enabled': stripe_enabled()})
