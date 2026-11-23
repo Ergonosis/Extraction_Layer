@@ -16,6 +16,11 @@ def stripe_secret_key() -> str:
     return _load_secret('STRIPE_SECRET_KEY', '') or os.getenv('STRIPE_SECRET_KEY', '')
 
 
+def stripe_test_mode() -> bool:
+    """True when using Stripe test/sandbox secret keys (sk_test_…)."""
+    return stripe_secret_key().startswith('sk_test_')
+
+
 def stripe_publishable_key() -> str:
     return os.getenv('STRIPE_PUBLISHABLE_KEY', '')
 

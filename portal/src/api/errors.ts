@@ -14,12 +14,16 @@ const STATUS_MESSAGES: Record<number, string> = {
 
 function isSafeApiMessage(value: unknown): value is string {
   if (typeof value !== 'string') return false
-  const trimmed = value.trim()
+  const trimmed = value.trim().replace(/^Request\s+req_[A-Za-z0-9]+:\s*/i, '')
   if (!trimmed || trimmed.length > 240) return false
   if (/traceback|exception|stack|sqlalchemy|psycopg|fernet|secret|token=/i.test(trimmed)) {
     return false
   }
   return true
+}
+
+function sanitizeApiMessage(value: string): string {
+  return value.trim().replace(/^Request\s+req_[A-Za-z0-9]+:\s*/i, '')
 }
 
 /**
@@ -39,10 +43,10 @@ export function userFacingApiError(err: unknown, fallback: string): string {
   const apiError = body?.error
 
   if (status === 400 && isSafeApiMessage(apiDetail)) {
-    return apiDetail
+    return sanitizeApiMessage(apiDetail)
   }
   if (status === 400 && isSafeApiMessage(apiError)) {
-    return apiError
+    return sanitizeApiMessage(apiError)
   }
 
   return STATUS_MESSAGES[status] ?? fallback

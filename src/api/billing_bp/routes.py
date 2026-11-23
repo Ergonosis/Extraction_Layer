@@ -46,11 +46,15 @@ def get_invoices():
 @auth_me_limit
 @login_required
 def post_setup_session():
+    from src.billing.stripe_adapter import humanize_stripe_error
+
     try:
         data = services.create_setup_session(session['organization_id'], actor_user_id=session.get('user_id'))
+    except ValueError as exc:
+        return jsonify({'error': 'Could not start Checkout', 'detail': str(exc)}), 400
     except Exception as exc:
         logger.exception('setup-session failed')
-        return jsonify({'error': 'Bad request', 'detail': str(exc)}), 400
+        return jsonify({'error': 'Could not start Checkout', 'detail': humanize_stripe_error(exc)}), 400
     return jsonify(data)
 
 
@@ -58,13 +62,15 @@ def post_setup_session():
 @auth_me_limit
 @login_required
 def post_portal_session():
+    from src.billing.stripe_adapter import humanize_stripe_error
+
     try:
         data = services.create_portal_session(session['organization_id'])
     except ValueError as exc:
-        return jsonify({'error': 'Bad request', 'detail': str(exc)}), 400
+        return jsonify({'error': 'Could not open billing portal', 'detail': str(exc)}), 400
     except Exception as exc:
         logger.exception('portal-session failed')
-        return jsonify({'error': 'Bad request', 'detail': str(exc)}), 400
+        return jsonify({'error': 'Could not open billing portal', 'detail': humanize_stripe_error(exc)}), 400
     return jsonify(data)
 
 

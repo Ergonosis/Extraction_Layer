@@ -8,13 +8,45 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from src.billing.meters import Meter
-from src.billing.settings import portal_base_url, stripe_enabled, stripe_meter_event_name, stripe_secret_key
+from src.billing.settings import (
+    portal_base_url,
+    stripe_enabled,
+    stripe_meter_event_name,
+    stripe_secret_key,
+    stripe_test_mode,
+)
 
 logger = logging.getLogger(__name__)
 
 # Stripe rejects reserved / non-routable domains (e.g. dev@localhost from ENABLE_DEV_LOGIN).
 _STRIPE_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 _BLOCKED_EMAIL_HOSTS = frozenset({'localhost', 'localhost.localdomain', 'example.com', 'example.org', 'example.net'})
+_STRIPE_REQ_PREFIX = re.compile(r'^Request\s+req_[A-Za-z0-9]+:\s*', re.IGNORECASE)
+
+
+def humanize_stripe_error(exc: BaseException) -> str:
+    """Turn Stripe API errors into short, user-facing copy (no request ids)."""
+    raw = _STRIPE_REQ_PREFIX.sub('', str(exc)).strip()
+    lower = raw.lower()
+    if 'head office' in lower or ('automatic tax' in lower and 'address' in lower):
+        if stripe_test_mode():
+            return (
+                'Stripe Tax needs a head office address in test mode. '
+                'Add one in Dashboard > Tax settings, then try again.'
+            )
+        return (
+            'Stripe Tax is not fully configured (missing head office address). '
+            'Ask an admin to finish Tax setup in the Stripe Dashboard, then try again.'
+        )
+    if 'no such customer' in lower:
+        return 'This organization has no valid Stripe customer. Start card setup again.'
+    if 'no such price' in lower or 'price parameter should be the id' in lower:
+        return 'A plan price is invalid. Re-save USD amounts in Admin Billing, then try again.'
+    if 'invalid email' in lower:
+        return 'Stripe rejected the customer email address. Use a real work email and try again.'
+    if len(raw) > 200:
+        return raw[:197].rstrip() + '…'
+    return raw or 'Stripe could not start Checkout. Try again in a moment.'
 
 
 def _stripe_safe_email(email: str | None) -> str | None:
@@ -361,7 +393,28 @@ class LiveStripeAdapter:
             params['customer_update'] = {'address': 'auto', 'name': 'auto'}
             params['tax_id_collection'] = {'enabled': True}
             params['line_items'] = line_items
-        session = stripe.checkout.Session.create(**params)
+        try:
+            session = stripe.checkout.Session.create(**params)
+        except Exception as exc:
+            # Sandbox-only: allow Checkout without Tax when head office address is unset.
+            msg = str(exc).lower()
+            allow_tax_fallback = (
+                stripe_test_mode() and mode != 'setup' and ('automatic tax' in msg or 'head office' in msg)
+            )
+            if allow_tax_fallback:
+                logger.warning(
+                    'Test-mode Checkout with automatic_tax failed (%s); retrying without Tax. '
+                    'Configure https://dashboard.stripe.com/test/settings/tax for tax.',
+                    exc,
+                )
+                params.pop('automatic_tax', None)
+                params.pop('tax_id_collection', None)
+                try:
+                    session = stripe.checkout.Session.create(**params)
+                except Exception as retry_exc:
+                    raise RuntimeError(humanize_stripe_error(retry_exc)) from retry_exc
+            else:
+                raise RuntimeError(humanize_stripe_error(exc)) from exc
         url = session.get('url') if isinstance(session, dict) else session.url
         sid = session.get('id') if isinstance(session, dict) else session.id
         if not url:
