@@ -45,7 +45,7 @@ def _plan_amounts_cents(row: OrganizationBilling) -> dict[str, int | None]:
             continue
         try:
             out[key] = int(val)
-        except TypeError, ValueError:
+        except (TypeError, ValueError):  # fmt: skip
             out[key] = None
     return out
 
